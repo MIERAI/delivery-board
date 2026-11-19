@@ -1,0 +1,43 @@
+{{template "top" .}}{{$r := .Run}}{{$st := $r.Status}}{{$sp := spanOf $r}}
+<div class="card">
+  <div class="hero">{{icon $st 34}}
+    <div><div class="t">{{$r.Name}}</div>
+      <div class="mut">{{.State.P.Title}} · {{$r.Title}} · <a class="mono" href="{{$r.TriggerURL}}" target="_blank">{{$r.Trigger}}</a></div></div>
+    <div class="meta"><div>状态<b>{{template "pill" $st}}</b></div><div>开始<b>{{or (clock (index $sp 0)) "—"}}</b></div>
+      <div>耗时<b>{{dur (index $sp 0) (index $sp 1)}}</b></div></div>
+  </div>
+  <div class="pipe">{{$prev := ""}}
+    {{range groups $r.Steps}}
+      {{if $prev}}<div class="link {{link $prev .Status}}"></div>{{end}}{{$prev = .Status}}
+      <div class="stage"><div class="sh">{{icon .Status 18}}{{.Stage}}</div>
+      {{range .Steps}}
+        {{if .URL}}<a class="job {{.Status}}" style="--c:var(--{{.Status}})" href="{{.URL}}" target="_blank">{{else}}<div class="job {{.Status}}" style="--c:var(--{{.Status}})">{{end}}
+          {{icon .Status 20}}<span><div class="jn">{{.Name}}</div><div class="js">{{stepsub .}}</div></span>
+        {{if .URL}}</a>{{else}}</div>{{end}}
+      {{end}}
+      </div>
+    {{end}}
+  </div>
+</div>
+
+{{if .Try}}
+<div class="card" style="margin-top:18px"><h2>试一下<span class="mut sm">用例 = 设计书里写的例子(预期基于用例自己的准备数据);实际返回来自 {{.State.P.Try.Env}} 环境的数据</span></h2>
+<div class="apis">
+{{range .Try}}
+  <div class="api"><div class="ah"><span class="m">{{.Method}}</span>
+  {{if .Missing}}<span class="mut">环境里还没有这个 API(未上线或已撤回)</span></div></div>{{else}}
+    <span class="mut">{{.Summary}}</span>
+    <span class="ep">{{$path := .Path}}{{range $.State.Envs}}{{if .URL}}<span><span class="tag {{lower .Name}}">{{.Name}}</span> <code>{{.URL}}{{$path}}</code></span>{{end}}{{end}}</span></div>
+    {{range .Cases}}
+    <div class="case"><div class="cn">{{.Name}}</div><div class="cols">
+      <div><h4>请求</h4><pre><code>{{.Request}}</code></pre></div>
+      <div><h4>用例预期</h4><pre><code>{{.Expected}}</code></pre></div>
+      <div><h4>实际返回 <span class="status {{if eq .Live.Code 200}}ok{{else}}ng{{end}}">{{if .Live.Code}}{{.Live.Code}}{{else}}ERR{{end}}</span><span>{{.Live.Millis}} ms</span></h4>
+        <pre><code>{{.Live.Body}}</code></pre></div></div>
+      <div class="curl"><pre><code>{{.Curl}}</code></pre><button onclick="cp(this)">复制</button></div></div>
+    {{end}}
+  </div>{{end}}
+{{end}}
+</div></div>
+{{end}}
+{{template "bottom" .}}

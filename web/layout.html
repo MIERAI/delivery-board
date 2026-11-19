@@ -1,0 +1,14 @@
+{{define "top"}}<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="{{.Refresh}}"><title>{{.Title}}</title><link rel="stylesheet" href="/style.css"></head>
+<body><div class="top"><div class="bar">
+<a class="brand" href="/"><span class="logo">{{icon "done" 18}}</span>{{.Board.Title}}</a>
+<div class="envs">{{range .Board.All}}{{$p := .P}}{{range .Envs}}
+<span class="env" title="{{$p.Title}} {{.Name}}: {{.Sync}}/{{.Health}}{{if .Error}} · {{.Error}}{{end}}"><span class="dot{{if not .Healthy}} bad{{end}}"></span>{{$p.Title}} · {{.Name}} <b>{{or .Tag "?"}}</b></span>{{end}}{{end}}
+</div></div></div><div class="wrap">{{end}}
+
+{{define "bottom"}}</div>
+<script>function cp(b){navigator.clipboard.writeText(b.parentElement.querySelector("code").innerText);b.textContent="已复制";setTimeout(()=>b.textContent="复制",1200)}</script>
+</body></html>{{end}}
+
+{{define "pill"}}<span class="pill pill-{{.}}">{{icon . 16}}{{word .}}</span>{{end}}

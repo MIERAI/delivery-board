@@ -1,0 +1,43 @@
+{{template "top" .}}
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+{{$b := .Board}}{{$f := .Filter}}
+<nav class="tabs"><a href="/" class="{{if not $f}}on{{end}}">全部</a>{{range $b.Pipelines}}<a href="/?p={{.ID}}" class="{{if eq $f .ID}}on{{end}}">{{.Title}}</a>{{end}}</nav>
+
+{{range .States}}{{$s := .}}
+{{if .Error}}<div class="err">{{.P.Title}}: {{.Error}}</div>{{end}}
+{{range .Gates}}
+<div class="card gate {{if .Ready}}ready{{else if .UpToDate}}synced{{end}}">
+  <div class="gh">
+    <div><div class="gt">{{$s.P.Title}} · {{.From}} → {{.Env}}</div>
+    <div class="mut">{{if eq .Candidate .Current}}{{.Env}} 已经是 {{.From}} 的版本 <b class="mono">{{.Current}}</b>
+      {{else}}{{.Env}} <b class="mono">{{or .Current "?"}}</b> → 候选 <b class="mono">{{.Candidate}}</b>{{if gt .Behind 0}} · 落后 <b>{{.Behind}}</b> 个提交{{end}}{{end}}</div></div>
+    <div class="act">
+    {{if .OpenPR}}<a class="btn" href="{{.OpenPR.HTMLURL}}" target="_blank">#{{.OpenPR.Number}} 等合并 ↗</a>
+    {{else if and .Ready $b.CanPromote}}<form method="post" action="/promote/{{$s.P.ID}}/{{.Env}}"><button class="btn primary">Promote {{.Candidate}} → {{.Env}}</button></form>
+    {{else if .Ready}}<a class="btn primary" href="{{.WorkflowURL}}" target="_blank">在 GitHub 上 Promote ↗</a>
+    {{else if .UpToDate}}<span class="btn off">✓ 已同步</span>
+    {{else}}<span class="btn off">还不能 promote</span>{{end}}
+    </div>
+  </div>
+  {{if not .UpToDate}}<div class="checks">{{range .Checks}}<span class="chk {{if .OK}}ok{{else}}ng{{end}}">{{if .OK}}✓{{else}}✕{{end}} {{.Name}}{{if .Detail}}<i>{{.Detail}}</i>{{end}}</span>{{end}}</div>{{else}}<div class="checks"></div>{{end}}
+</div>
+{{end}}
+{{end}}
+
+<div class="card list">
+  <h2>交付历史<span class="mut sm">从改动(设计书 PR / 推送)到最后一个环境 · 更新 {{range .States}}{{hms .Updated}} {{end}}</span></h2>
+  <div class="row head"><span></span><span>交付</span><span>触发</span><span>开始</span><span>耗时</span><span>当前</span><span>进度</span></div>
+  {{range .Rows}}{{$s := .S}}{{with .R}}{{$st := .Status}}
+  <a class="row" href="/run/{{$s.P.ID}}/{{.ID}}">{{icon $st 22}}
+    <span><div class="name"><span class="pl">{{$s.P.Title}}</span>{{.Name}}</div><div class="sub">{{.Title}}</div></span>
+    <span class="mono">{{.Trigger}}</span>
+    {{$sp := spanOf .}}<span class="mut">{{ago (index $sp 0)}}</span>
+    <span class="mut">{{dur (index $sp 0) (index $sp 1)}}</span>
+    <span>{{if ne $st "done"}}{{template "pill" $st}}{{end}} <span class="mut">{{now .}}</span></span>
+    <span class="seg">{{range .Steps}}<i class="{{.Status}}" title="{{.Stage}} · {{.Name}}: {{word .Status}}"></i>{{end}}</span>
+  </a>
+  {{end}}{{end}}
+  {{if not .Rows}}<div class="empty">还没有数据(启动后第一次收集需要几十秒)</div>{{end}}
+</div>
+{{template "bottom" .}}

@@ -1,0 +1,25 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go.mod }
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+      - run: go vet ./... && go test -race ./...
+      - run: go run . -check -config examples/config.yaml
+  image:
+    if: github.event_name != 'pull_request'
+    needs: test
+    permissions: { contents: read, packages: write, id-token: write }
+    uses: MIERAI/gitops-platform-blueprint/.github/workflows/build-image.yml@main
+    with: { image: delivery-board }
