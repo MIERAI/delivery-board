@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -164,14 +165,15 @@ func (b *Board) templates() *template.Template {
 }
 
 type pageData struct {
-	Title   string
-	Refresh int
-	Board   *Board
-	States  []*PipelineState
-	Filter  string
-	Flash   string
-	Error   string
-	Rows    []row // list page: runs of every shown pipeline, newest first
+	Title    string
+	Refresh  int
+	Board    *Board
+	States   []*PipelineState
+	Filter   string
+	Flash    string
+	Error    string
+	Rows     []row    // list page: runs of every shown pipeline, newest first
+	EnvNames []string // list page: the environment columns (every pipeline's, in order)
 	// run page
 	State *PipelineState
 	Run   *Run
@@ -196,6 +198,7 @@ type tryCase struct {
 
 func (b *Board) Handler() http.Handler {
 	css, _ := webFS.ReadFile("web/style.css")
+	b.cssVersion = fmt.Sprintf("%x", sha256.Sum256(css))[:10] // in the URL: a new release is never served a cached stylesheet
 	tpl := b.templates()
 	render := func(w http.ResponseWriter, name string, d *pageData) {
 		var buf bytes.Buffer
@@ -218,6 +221,7 @@ func (b *Board) Handler() http.Handler {
 				}
 			}
 		}
+		d.EnvNames = envNames(d.States)
 		sort.SliceStable(d.Rows, func(i, j int) bool { return d.Rows[i].R.Created.After(d.Rows[j].R.Created) })
 		render(w, "list.html", d)
 	})
@@ -268,7 +272,7 @@ func (b *Board) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") })
 	mux.HandleFunc("GET /style.css", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
-		w.Header().Set("Cache-Control", "max-age=300")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		w.Write(css)
 	})
 	return mux
@@ -398,3 +402,40 @@ func readAll(r io.Reader, max int64) []byte {
 func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 
 func stripNL(s string) string { return strings.ReplaceAll(s, "\n", "") }
+
+func envNames(states []*PipelineState) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range states {
+		for _, e := range s.P.Environments {
+			if !seen[e.Name] {
+				seen[e.Name] = true
+				out = append(out, e.Name)
+			}
+		}
+	}
+	return out
+}
+
+type unhealthy struct{ Pipeline, Env, Detail string }
+
+type health struct {
+	OK, Total int
+	Bad       []unhealthy
+}
+
+// Health: the header's summary (only the unhealthy environments are named, however many pipelines there are).
+func (b *Board) Health() health {
+	var h health
+	for _, s := range b.All() {
+		for _, e := range s.Envs {
+			h.Total++
+			if e.Healthy() {
+				h.OK++
+			} else {
+				h.Bad = append(h.Bad, unhealthy{s.P.ID, e.Name, e.Sync + "/" + e.Health + " " + e.Error})
+			}
+		}
+	}
+	return h
+}

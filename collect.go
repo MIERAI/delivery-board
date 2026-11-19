@@ -553,6 +553,9 @@ func (c *collector) delivery(sha string, ps *PipelineState) []Step {
 	return steps
 }
 
+// Failing: the names of the checks that do not pass.
+func (g *Gate) Failing() string { return g.failing() }
+
 func (g *Gate) failing() string {
 	var out []string
 	for _, ch := range g.Checks {

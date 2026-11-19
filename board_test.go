@@ -322,7 +322,7 @@ func TestPagesRender(t *testing.T) {
 		live: map[string]liveResult{}}
 	b.states["app"] = collectTest(t, newWorld(time.Hour))
 	h := b.Handler()
-	for path, want := range map[string]string{"/": "Promote", "/run/app/pr-1": "promote → prod", "/metrics": `delivery_promotion_ready{pipeline="app",env="prod"} 1`,
+	for path, want := range map[string]string{"/": "环境 2/2 健康", "/?p=app": "在 GitHub 上 Promote", "/?q=1": "落后 2 · 可以 promote", "/run/app/pr-1": "promote → prod", "/metrics": `delivery_promotion_ready{pipeline="app",env="prod"} 1`,
 		"/api/state": `"Candidate":"g100000"`} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))

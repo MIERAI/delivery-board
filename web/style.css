@@ -70,3 +70,11 @@ pre{margin:0;background:var(--soft);border:1px solid var(--line);border-radius:8
 .tag{background:var(--waiting-bg);color:var(--mut)}
 
 .gate.synced{border-left-color:var(--running)}
+
+.matrix{margin-bottom:14px}.mx{display:grid;grid-template-columns:minmax(120px,1.2fr) repeat(var(--cols),minmax(120px,1fr))}
+.mx>*{padding:11px 18px;border-bottom:1px solid var(--line);min-width:0}.mx .mh{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;padding:9px 18px}
+.mx .mp{font-weight:650}.mx .mc div{display:flex;gap:8px;align-items:center}.mx a:hover{background:var(--soft)}
+.mx .dot{width:8px;height:8px;border-radius:50%;background:var(--done);flex:none}.mx .dot.bad{background:var(--failed)}
+.gs{font-size:12px;margin-top:3px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gs.ok{color:var(--done)}.gs.ng{color:var(--failed)}.gs.wait{color:var(--person)}.gs.same{color:var(--faint)}
+a.env:hover{background:rgba(255,255,255,.24)}
+@media (max-width:900px){.mx{overflow-x:auto}}

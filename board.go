@@ -23,6 +23,8 @@ type Board struct {
 	states   map[string]*PipelineState
 	promoted map[string]time.Time // pipeline/env → last dispatch (rate limit)
 
+	cssVersion string
+
 	liveMu sync.Mutex
 	live   map[string]liveResult
 }
@@ -221,4 +223,5 @@ func (b *Board) Live(t *Try, path string, body []byte) liveResult {
 // for the templates
 func (b *Board) Title() string          { return b.cfg.Title }
 func (b *Board) Pipelines() []*Pipeline { return b.cfg.Pipelines }
+func (b *Board) CSSVersion() string     { return b.cssVersion }
 func (b *Board) CanPromote() bool       { return b.promoteToken != "" }
