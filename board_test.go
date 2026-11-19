@@ -53,11 +53,11 @@ pipelines:
     release: { name: release, jobs: { build: image, deploy: to dev } }
     environments:
       - name: dev
-        manifests: { repo: o/m, path: app/dev.yaml, image: img }
+        manifests: { repo: o/m, path: app/dev.yaml, image: img, format: kustomize }
         argocd: { app: app-dev }
         workload: { namespace: dev, name: app }
       - name: prod
-        manifests: { repo: o/m, path: app/prod.yaml, image: img }
+        manifests: { repo: o/m, path: app/prod.yaml, image: img, format: kustomize }
         argocd: { app: app-prod }
         workload: { namespace: prod, name: app }
         promotion: { from: dev, soak: 10m, prTitle: ^promote app, workflow: { file: promote.yml, inputs: { app: app } } }
@@ -365,5 +365,47 @@ func TestBehindCountsOwnReleasesOnly(t *testing.T) {
 	w.gh["repos/o/app/commits?sha=main&per_page=100"] = []map[string]any{{"sha": sha("g1")}, {"sha": sha("x2")}, {"sha": sha("x1")}, {"sha": sha("m1")}, {"sha": sha("o1")}}
 	if g := collectTest(t, w).Gate("prod"); g.Behind != 1 {
 		t.Fatalf("behind %d, want 1 (x1, x2, m1: other services / no release)", g.Behind)
+	}
+}
+
+func TestManifestTagFormats(t *testing.T) {
+	values := []byte(`# values
+image:
+  repository: ghcr.io/o/worker
+  tag: "abc1234"
+sidecar:
+  image: { tag: v2, repository: busybox }
+deploy:
+  version: "x9"
+`)
+	env := func(format, path, image, key string) *Environment {
+		e := &Environment{}
+		e.Manifests.Format, e.Manifests.Path, e.Manifests.Image, e.Manifests.Key = format, path, image, key
+		return e
+	}
+	for _, c := range []struct {
+		e    *Environment
+		raw  []byte
+		want string
+	}{
+		{env("helm", "v.yaml", "ghcr.io/o/worker", ""), values, "abc1234"},
+		{env("helm", "v.yaml", "busybox", ""), values, "v2"},
+		{env("helm", "v.yaml", "missing", ""), values, ""},
+		{env("helm", "v.yaml", "", "deploy.version"), values, "x9"},
+		{env("helm", "v.yaml", "", "deploy.nope"), values, ""},
+		{env("kustomize", "k/kustomization.yaml", "img", ""), []byte("images:\n  - name: img\n    newTag: \"t1\"\n"), "t1"},
+	} {
+		if got := manifestTag(c.raw, c.e); got != c.want {
+			t.Errorf("%s %s %q: got %q, want %q", c.e.Manifests.Format, c.e.Manifests.Image, c.e.Manifests.Key, got, c.want)
+		}
+	}
+	// the format follows the file name unless given
+	cfg, err := ParseConfig([]byte(strings.NewReplacer("path: app/dev.yaml, image: img, format: kustomize", "path: app/values-dev.yaml, image: img",
+		"path: app/prod.yaml, image: img, format: kustomize", "path: app/prod/kustomization.yaml, image: img").Replace(testConfig)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := cfg.Pipelines[0].Environments; e[0].Manifests.Format != "helm" || e[1].Manifests.Format != "kustomize" {
+		t.Errorf("formats %s %s", e[0].Manifests.Format, e[1].Manifests.Format)
 	}
 }

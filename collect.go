@@ -229,12 +229,52 @@ func (c *collector) history(e *Environment) ([]Version, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tag := kustomizeTag(raw, m.Image); tag != "" {
+		if tag := manifestTag(raw, e); tag != "" {
 			out = append(out, Version{At: cm.Commit.Committer.Date, Tag: tag, URL: cm.HTMLURL})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out, nil
+}
+
+// manifestTag: the environment's image tag in the content of its manifests file.
+func manifestTag(raw []byte, e *Environment) string {
+	m := e.Manifests
+	if m.Format == "kustomize" {
+		return kustomizeTag(raw, m.Image)
+	}
+	var doc yaml.Node
+	if yaml.Unmarshal(raw, &doc) != nil || len(doc.Content) == 0 {
+		return ""
+	}
+	if m.Key != "" {
+		n := doc.Content[0]
+		for _, part := range strings.Split(m.Key, ".") {
+			if n = get(n, part); n == nil {
+				return ""
+			}
+		}
+		if n.Kind == yaml.ScalarNode {
+			return n.Value
+		}
+		return ""
+	}
+	return helmTag(doc.Content[0], m.Image)
+}
+
+// helmTag: the tag of the first mapping {repository: image, tag: …} anywhere in the values.
+func helmTag(n *yaml.Node, image string) string {
+	if n.Kind == yaml.MappingNode && scalar(n, "repository") == image {
+		if t := scalar(n, "tag"); t != "" {
+			return t
+		}
+	}
+	for _, c := range n.Content {
+		if t := helmTag(c, image); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 func kustomizeTag(raw []byte, image string) string {

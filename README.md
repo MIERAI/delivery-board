@@ -32,7 +32,7 @@ Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run 
 | `steps[].followPR` | pull requests | a PR opened by automation for the current commit (`$(sha7)`); its merge commit becomes current |
 | `push` | release runs on the branch | commits that no change covers are runs too |
 | `release` | workflow run on the commit | build and deploy to the first environment |
-| `environments[].manifests` | commits of a file in the manifests repo | the desired version (image tag) and when it arrived |
+| `environments[].manifests` | commits of a file in the manifests repo | the desired version (image tag) and when it arrived: a kustomization (`images[name].newTag`) or Helm values (the mapping `{repository: <image>, tag}`, or `key: a.b.tag`) |
 | `environments[].argocd`, `.workload` | the cluster | sync / health, the running version, rollout finished |
 | `environments[].promotion` | — | `from`, `soak`, the workflow to dispatch (`inputs`, `versionInput`, `soakInput`), the title of its PRs |
 
@@ -67,8 +67,8 @@ A commit is *in* an environment when the environment's version is that commit or
 "Behind" counts the pipeline's own releases (in a monorepo, other services' commits do not count).
 
 Validated shapes ([examples/config.yaml](examples/config.yaml)): code generated from design PRs (review bot, follow-up
-PR), a plain push pipeline with canary Rollouts, and a monorepo whose services share manifests files but are released
-(path filters) and promoted (one image) on their own through three environments.
+PR), a plain push pipeline with canary Rollouts, and a monorepo whose services are released (path filters) and promoted
+(one image) on their own through three environments, deployed with kustomize (shared overlays) and with a Helm chart.
 
 ## Run
 

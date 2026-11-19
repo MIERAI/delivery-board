@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -85,6 +86,10 @@ type Environment struct {
 		Repo  string `yaml:"repo"`
 		Path  string `yaml:"path"`
 		Image string `yaml:"image"`
+		// kustomize: images[name=image].newTag. helm: a values file; the tag of the mapping {repository: image, tag}
+		// (the Helm chart convention), or Key (dot path, e.g. image.tag) for other charts. Default: by the file name.
+		Format string `yaml:"format"`
+		Key    string `yaml:"key"`
 	} `yaml:"manifests"`
 	ArgoCD struct {
 		Namespace string `yaml:"namespace"`
@@ -256,6 +261,18 @@ func (p *Pipeline) validate() error {
 			return fmt.Errorf("environments[%d]: name and manifests.{repo,path,image} required", i)
 		}
 		e.Stage = or(e.Stage, strings.ToUpper(e.Name[:1])+e.Name[1:])
+		if e.Manifests.Format == "" {
+			e.Manifests.Format = "helm"
+			if base := path.Base(e.Manifests.Path); base == "kustomization.yaml" || base == "kustomization.yml" || base == "Kustomization" {
+				e.Manifests.Format = "kustomize"
+			}
+		}
+		if e.Manifests.Format != "kustomize" && e.Manifests.Format != "helm" {
+			return fmt.Errorf("environments[%d].manifests.format: kustomize or helm", i)
+		}
+		if e.Manifests.Key != "" && e.Manifests.Format != "helm" {
+			return fmt.Errorf("environments[%d].manifests.key: only for helm values", i)
+		}
 		e.ArgoCD.Namespace = or(e.ArgoCD.Namespace, "argocd")
 		e.Workload.Kind = or(e.Workload.Kind, "Deployment")
 		if _, ok := workloadAPI[e.Workload.Kind]; !ok {

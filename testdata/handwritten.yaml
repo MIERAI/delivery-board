@@ -134,3 +134,34 @@ pipelines:
           soak: 10m
           prTitle: "^promote storefront storefront-api → prod$"
           workflow: { file: promote.yml, inputs: { app: storefront, image: ghcr.io/mierai/storefront-api, from: staging, to: prod }, soakInput: soak }
+
+  - id: storefront-worker
+    title: storefront · worker
+    repo: MIERAI/storefront
+    push: { label: 提交 }
+    release:
+      name: release-worker
+      jobs: { test: test, "image / build": 镜像, "promote / promote": 推送 dev }
+    environments:
+      - name: dev
+        manifests: { repo: MIERAI/gitops-manifests, path: storefront-worker/values-dev.yaml, image: ghcr.io/mierai/storefront-worker }
+        argocd: { app: storefront-worker-dev }
+        workload: { namespace: storefront-dev, kind: Deployment, name: worker, container: worker }
+      - name: staging
+        manifests: { repo: MIERAI/gitops-manifests, path: storefront-worker/values-staging.yaml, image: ghcr.io/mierai/storefront-worker }
+        argocd: { app: storefront-worker-staging }
+        workload: { namespace: storefront-staging, kind: Deployment, name: worker, container: worker }
+        promotion:
+          from: dev
+          soak: 5m
+          prTitle: "^promote storefront-worker → staging$"
+          workflow: { file: promote.yml, inputs: { app: storefront-worker, from: dev, to: staging }, soakInput: soak }
+      - name: prod
+        manifests: { repo: MIERAI/gitops-manifests, path: storefront-worker/values-prod.yaml, image: ghcr.io/mierai/storefront-worker }
+        argocd: { app: storefront-worker-prod }
+        workload: { namespace: storefront-prod, kind: Deployment, name: worker, container: worker }
+        promotion:
+          from: staging
+          soak: 10m
+          prTitle: "^promote storefront-worker → prod$"
+          workflow: { file: promote.yml, inputs: { app: storefront-worker, from: staging, to: prod }, soakInput: soak }

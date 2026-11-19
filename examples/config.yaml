@@ -1,7 +1,8 @@
 # The pipelines of the GitOps Platform Blueprint, three shapes, one program (only this file differs):
 #   api-factory  design PR → AI review → generated PR → release → dev → prod
 #   sample-app   push → release → dev → prod
-#   storefront   monorepo: two services, each released (paths) and promoted (one image) on its own, dev → staging → prod
+#   storefront   monorepo: services released (paths) and promoted (one image) on their own, dev → staging → prod;
+#                web / api with kustomize, worker with a Helm chart (values per environment)
 title: 交付看板
 timezone: Asia/Tokyo
 interval: 30s
@@ -85,6 +86,27 @@ pipelines:
       promotion:                              # one image at a time: the service
         prTitle: ^promote storefront storefront-$(service) → $(env)$
         workflow: { file: promote.yml, inputs: { app: storefront, image: ghcr.io/mierai/storefront-$(service), from: $(from), to: $(env) }, soakInput: soak }
+    environments:
+      - name: dev
+      - { name: staging, promotion: { from: dev, soak: 5m } }
+      - { name: prod, promotion: { from: staging, soak: 10m } }
+
+  # the third storefront service: a Helm chart with values per environment (same namespaces as web / api)
+  - id: storefront-worker
+    title: storefront · worker
+    repo: MIERAI/storefront
+    push: { label: 提交 }
+    release:
+      name: release-worker
+      jobs: { test: test, "image / build": 镜像, "promote / promote": 推送 dev }
+    defaults:
+      environment:
+        manifests: { repo: MIERAI/gitops-manifests, path: storefront-worker/values-$(env).yaml, image: ghcr.io/mierai/storefront-worker }   # helm: {repository, tag}
+        argocd: { app: storefront-worker-$(env) }
+        workload: { namespace: storefront-$(env), kind: Deployment, name: worker, container: worker }
+      promotion:
+        prTitle: ^promote storefront-worker → $(env)$
+        workflow: { file: promote.yml, inputs: { app: storefront-worker, from: $(from), to: $(env) }, soakInput: soak }
     environments:
       - name: dev
       - { name: staging, promotion: { from: dev, soak: 5m } }
