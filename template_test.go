@@ -77,7 +77,7 @@ func TestServicesAndDefaults(t *testing.T) {
 
 func TestTemplateErrors(t *testing.T) {
 	for name, c := range map[string]struct{ edit, with, want string }{
-		"service placeholder without services": {"    services: [web, api]\n", "", "placeholders outside their scope"},
+		"service placeholder without services":   {"    services: [web, api]\n", "", "placeholders outside their scope"},
 		"env placeholder outside an environment": {"release-$(service)", "release-$(env)", "placeholders outside their scope"},
 		"bad service name":                       {"[web, api]", "[Web]", "must match"},
 		"unknown defaults key":                   {"      promotion:\n", "      stage:\n", "only environment and promotion"},
