@@ -1,8 +1,8 @@
-# The pipelines of the GitOps Platform Blueprint, three shapes, one program (only this file differs):
-#   api-factory  design PR → AI review → generated PR → release → dev → prod
-#   sample-app   push → release → dev → prod
-#   storefront   monorepo (discovered from storefront/app.yaml): services released (paths) and promoted (one image)
-#                on their own, dev → staging → prod; web / api with kustomize, worker with a Helm chart
+# The pipelines of the GitOps Platform Blueprint. Every application is registered by an app.yaml in gitops-manifests
+# and discovered (below); a pipeline configured here with the same id wins, for what a descriptor cannot say:
+#   api-factory  design PR → AI review → generated PR → release → dev → prod (configured: the design-PR steps, try it)
+#   sample-app   push → release → dev → prod (discovered)
+#   storefront   monorepo: web, api (kustomize), worker (Helm), each released and promoted on its own (discovered)
 title: 交付看板
 timezone: Asia/Tokyo
 interval: 30s
@@ -46,28 +46,6 @@ pipelines:
       internalURL: http://api-factory.api-factory-dev.svc:8080
       tokenEnv: DEV_TOKEN
       curlToken: $(cat ~/workspace/gitops/infrastructure-live/.secrets/laptop/api-factory-dev.token)
-
-  - id: sample-app
-    title: sample-app
-    repo: MIERAI/sample-app
-    push: { label: 提交 }
-    release:
-      name: ci
-      jobs: { test: test, "image / build": 镜像, "promote / promote": 推送 dev }
-    defaults:
-      environment:
-        manifests: { repo: MIERAI/gitops-manifests, path: sample-app/overlays/$(env)/kustomization.yaml, image: ghcr.io/mierai/sample-app }
-        argocd: { app: sample-app-$(env) }
-        workload: { namespace: sample-app-$(env), kind: Rollout, name: sample-app, container: app }
-    environments:
-      - { name: dev, url: "http://100.90.245.89:30082" }
-      - name: prod
-        url: http://100.90.245.89:30083
-        promotion:
-          from: dev
-          soak: 10m
-          prTitle: ^promote sample-app
-          workflow: { file: promote.yml, inputs: { app: sample-app }, soakInput: soak }
 
 # Applications registered by an app.yaml in the manifests repository (e.g. storefront: web, api, worker): one pipeline
 # per service, nothing to configure here. Refreshed every 2 minutes.

@@ -30,6 +30,7 @@ type appDesc struct {
 	Repo         string `yaml:"repo"`
 	Environments []struct {
 		Name      string `yaml:"name"`
+		URL       string `yaml:"url"`
 		Promotion *struct {
 			From string   `yaml:"from"`
 			Soak Duration `yaml:"soak"`
@@ -113,13 +114,17 @@ func pipelinesOf(raw []byte, dir string, d *Discover) ([]*Pipeline, error) {
 		if comp == nil {
 			return nil, fmt.Errorf("service %s: no component %q", s.Name, s.Component)
 		}
-		p := &Pipeline{ID: a.Name + "-" + s.Name, Title: a.Name + " · " + s.Name, Repo: a.Repo, Push: d.Push, discoveredFrom: d.Repo,
+		id, title := a.Name+"-"+s.Name, a.Name+" · "+s.Name
+		if len(a.Services) == 1 { // a single service is the application
+			id, title = a.Name, a.Name
+		}
+		p := &Pipeline{ID: id, Title: title, Repo: a.Repo, Push: d.Push, discoveredFrom: d.Repo,
 			Release: &Workflow{Name: or(s.Release, "release-"+s.Name), Jobs: d.Jobs}}
 		if p.Push == nil {
 			p.Push = &Push{Label: "push"}
 		}
 		for _, env := range a.Environments {
-			e := &Environment{Name: env.Name}
+			e := &Environment{Name: env.Name, URL: env.URL}
 			e.Manifests.Repo, e.Manifests.Image = d.Repo, s.Image
 			if comp.Helm != "" {
 				e.Manifests.Path = path.Join(dir, comp.Helm, "values-"+env.Name+".yaml")
@@ -132,13 +137,18 @@ func pipelinesOf(raw []byte, dir string, d *Discover) ([]*Pipeline, error) {
 			e.Workload.Name = or(s.Workload.Name, s.Name)
 			e.Workload.Container = or(s.Workload.Container, s.Name)
 			if pr := env.Promotion; pr != nil && d.Promotion.Workflow != "" {
+				// several services: promote this one's image; a single service: every image of its files together
+				// (e.g. api-factory's API + migration image). promote.yml names the image in the PR title when given.
+				what, inputs := a.Name, map[string]string{"app": a.Name, "from": pr.From, "to": env.Name}
+				if len(a.Services) > 1 {
+					what, inputs["image"] = a.Name+" "+path.Base(s.Image), s.Image
+				}
 				e.Promotion = &Promotion{From: pr.From, Soak: pr.Soak,
-					// promote.yml titles its PR "promote <app> <image name> → <env>"
-					PRTitle: "^" + regexp.QuoteMeta("promote "+a.Name+" "+path.Base(s.Image)+" → "+env.Name) + "$"}
+					PRTitle: "^" + regexp.QuoteMeta("promote "+what+" → "+env.Name) + "$"}
 				e.Promotion.Workflow.File = d.Promotion.Workflow
 				e.Promotion.Workflow.Repo = d.Repo
 				e.Promotion.Workflow.SoakInput = d.Promotion.SoakInput
-				e.Promotion.Workflow.Inputs = map[string]string{"app": a.Name, "image": s.Image, "from": pr.From, "to": env.Name}
+				e.Promotion.Workflow.Inputs = inputs
 			}
 			p.Environments = append(p.Environments, e)
 		}
@@ -191,8 +201,7 @@ func (b *Board) rediscover() {
 			}
 		}
 		for _, p := range ps {
-			if seen[p.ID] {
-				msgs = append(msgs, "discovered pipeline "+p.ID+" duplicates a configured one: skipped")
+			if seen[p.ID] { // configured explicitly (e.g. with design PR steps): the configuration wins
 				continue
 			}
 			seen[p.ID] = true

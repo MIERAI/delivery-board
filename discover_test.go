@@ -76,3 +76,27 @@ func TestDiscoverFromTree(t *testing.T) {
 		t.Fatal("discover ok without the tree")
 	}
 }
+
+// A single service: no image input (every image of the file moves, e.g. API + migration image), plain PR title.
+func TestSingleServiceDescriptor(t *testing.T) {
+	raw := []byte(`name: api-factory
+repo: o/api-factory
+environments:
+  - { name: dev, url: "http://h:30080" }
+  - { name: prod, promotion: { from: dev, soak: 10m } }
+components: [{ name: api-factory, kustomize: overlays }]
+services: [{ name: api, image: ghcr.io/o/api-factory, component: api-factory, workload: { name: api-factory, container: api } }]
+`)
+	ps, err := pipelinesOf(raw, "api-factory", testDiscover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := ps[0]
+	if p.ID != "api-factory" || p.Title != "api-factory" || p.Environments[0].URL != "http://h:30080" || p.Environments[0].Workload.Name != "api-factory" {
+		t.Errorf("%s %+v %+v", p.ID, p.Environments[0].URL, p.Environments[0].Workload)
+	}
+	pr := p.Environments[1].Promotion
+	if _, has := pr.Workflow.Inputs["image"]; has || !pr.prTitle.MatchString("promote api-factory → prod") {
+		t.Errorf("inputs %v title %s", pr.Workflow.Inputs, pr.prTitle)
+	}
+}
