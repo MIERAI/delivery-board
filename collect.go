@@ -99,7 +99,7 @@ type Gate struct {
 	Env, From          string
 	Candidate, Current string    // tag in From (desired by git), tag in Env
 	Since              time.Time // Candidate arrived in From
-	Behind             int       // commits of the branch between Current and Candidate (-1: unknown)
+	Behind             int       // releases of the pipeline between Current and Candidate (-1: unknown)
 	Checks             []Check
 	Ready              bool
 	UpToDate           bool // Env already runs From's version: nothing to promote
@@ -280,11 +280,7 @@ func (c *collector) gate(e *Environment) (*Gate, error) {
 	for i := len(h) - 1; i >= 0 && h[i].Tag == g.Candidate; i-- {
 		g.Since = h[i].At
 	}
-	if a, ok := c.pos[short(g.Candidate)]; ok {
-		if b, ok := c.pos[short(g.Current)]; ok {
-			g.Behind = b - a
-		}
-	}
+	g.Behind = c.behind(g.Current, g.Candidate)
 	if pr.prTitle != nil {
 		var open []ghPull
 		if err := c.gh.Get(fmt.Sprintf("repos/%s/pulls?state=open&per_page=30", pr.Workflow.Repo), false, &open); err != nil {
@@ -312,6 +308,29 @@ func (c *collector) gate(e *Environment) (*Gate, error) {
 		g.Ready = g.Ready && ch.OK
 	}
 	return g, nil
+}
+
+// behind: how many versions of this pipeline lie after from up to and including to. A version = a commit with a
+// release run (in a monorepo, commits of other services do not count); commits of the branch without a release.
+func (c *collector) behind(from, to string) int {
+	a, ok1 := c.pos[short(to)]
+	b, ok2 := c.pos[short(from)]
+	if !ok1 || !ok2 {
+		return -1
+	}
+	if c.p.Release == nil {
+		return b - a
+	}
+	seen := map[string]bool{}
+	for _, r := range c.runs {
+		if r.Name != c.p.Release.Name || r.HeadBranch != c.p.Branch || seen[r.HeadSHA] {
+			continue
+		}
+		if i, ok := c.pos[short(r.HeadSHA)]; ok && i >= a && i < b {
+			seen[r.HeadSHA] = true
+		}
+	}
+	return len(seen)
 }
 
 func openPRDetail(p *ghPull) string {

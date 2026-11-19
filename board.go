@@ -131,6 +131,9 @@ func (b *Board) Promote(pipeline, env string) (string, error) {
 		inputs[k] = v
 	}
 	inputs[pr.Workflow.VersionInput] = g.Candidate
+	if pr.Workflow.SoakInput != "" {
+		inputs[pr.Workflow.SoakInput] = fmt.Sprint(int(pr.Soak.Minutes()))
+	}
 	path := fmt.Sprintf("repos/%s/actions/workflows/%s/dispatches", pr.Workflow.Repo, pr.Workflow.File)
 	if _, err := b.gh.do("POST", path, b.promoteToken, map[string]any{"ref": pr.Workflow.Ref, "inputs": inputs}); err != nil {
 		return "", err

@@ -27,7 +27,7 @@
   <div class="gh">
     <div><div class="gt">{{$s.P.Title}} · {{.From}} → {{.Env}}</div>
     <div class="mut">{{if eq .Candidate .Current}}{{.Env}} 已经是 {{.From}} 的版本 <b class="mono">{{.Current}}</b>
-      {{else}}{{.Env}} <b class="mono">{{or .Current "?"}}</b> → 候选 <b class="mono">{{.Candidate}}</b>{{if gt .Behind 0}} · 落后 <b>{{.Behind}}</b> 个提交{{end}}{{end}}</div></div>
+      {{else}}{{.Env}} <b class="mono">{{or .Current "?"}}</b> → 候选 <b class="mono">{{.Candidate}}</b>{{if gt .Behind 0}} · 落后 <b>{{.Behind}}</b> 个版本{{end}}{{end}}</div></div>
     <div class="act">
     {{if .OpenPR}}<a class="btn" href="{{.OpenPR.HTMLURL}}" target="_blank">#{{.OpenPR.Number}} 等合并 ↗</a>
     {{else if and .Ready $b.CanPromote}}<form method="post" action="/promote/{{$s.P.ID}}/{{.Env}}"><button class="btn primary">Promote {{.Candidate}} → {{.Env}}</button></form>

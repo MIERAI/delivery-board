@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -403,15 +404,30 @@ func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 
 func stripNL(s string) string { return strings.ReplaceAll(s, "\n", "") }
 
+// envNames: the environment columns, in pipeline order: an environment a pipeline adds goes right after the one
+// before it in that pipeline (dev, prod + dev, staging, prod → dev, staging, prod).
+// envNames: the environment columns, in pipeline order. An environment only some pipelines have goes before the next
+// environment of that pipeline that is already a column (dev, prod + dev, staging, prod + qa, prod → dev, staging,
+// qa, prod), or after its previous one.
 func envNames(states []*PipelineState) []string {
 	var out []string
-	seen := map[string]bool{}
 	for _, s := range states {
-		for _, e := range s.P.Environments {
-			if !seen[e.Name] {
-				seen[e.Name] = true
-				out = append(out, e.Name)
+		envs := s.P.Environments
+		for k, e := range envs {
+			if slices.Contains(out, e.Name) {
+				continue
 			}
+			at := len(out)
+			for _, next := range envs[k+1:] {
+				if i := slices.Index(out, next.Name); i >= 0 {
+					at = i
+					break
+				}
+			}
+			if at == len(out) && k > 0 {
+				at = slices.Index(out, envs[k-1].Name) + 1
+			}
+			out = slices.Insert(out, at, e.Name)
 		}
 	}
 	return out

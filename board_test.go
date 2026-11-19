@@ -184,7 +184,7 @@ func TestDesignChangeToGate(t *testing.T) {
 		t.Errorf("promote note %q", n)
 	}
 	g := ps.Gate("prod")
-	if !g.Ready || g.Candidate != short(sha("g1")) || g.Current != short(sha("o1")) || g.Behind != 2 {
+	if !g.Ready || g.Candidate != short(sha("g1")) || g.Current != short(sha("o1")) || g.Behind != 1 /* m1 has no release: one version */ {
 		t.Fatalf("gate %+v", g)
 	}
 	// the commit o1 was pushed straight to main: its own run, delivered everywhere
@@ -322,7 +322,7 @@ func TestPagesRender(t *testing.T) {
 		live: map[string]liveResult{}}
 	b.states["app"] = collectTest(t, newWorld(time.Hour))
 	h := b.Handler()
-	for path, want := range map[string]string{"/": "环境 2/2 健康", "/?p=app": "在 GitHub 上 Promote", "/?q=1": "落后 2 · 可以 promote", "/run/app/pr-1": "promote → prod", "/metrics": `delivery_promotion_ready{pipeline="app",env="prod"} 1`,
+	for path, want := range map[string]string{"/": "环境 2/2 健康", "/?p=app": "在 GitHub 上 Promote", "/?q=1": "落后 1 · 可以 promote", "/run/app/pr-1": "promote → prod", "/metrics": `delivery_promotion_ready{pipeline="app",env="prod"} 1`,
 		"/api/state": `"Candidate":"g100000"`} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
@@ -342,5 +342,28 @@ func TestPagesRender(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || !strings.Contains(loc, "error=") {
 		t.Errorf("promote without token: %d %s", rec.Code, loc)
+	}
+}
+
+func TestEnvColumnsKeepPipelineOrder(t *testing.T) {
+	mk := func(names ...string) *PipelineState {
+		p := &Pipeline{}
+		for _, n := range names {
+			p.Environments = append(p.Environments, &Environment{Name: n})
+		}
+		return &PipelineState{P: p}
+	}
+	got := envNames([]*PipelineState{mk("dev", "prod"), mk("dev", "staging", "prod"), mk("qa", "prod")})
+	if want := []string{"dev", "staging", "qa", "prod"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// In a monorepo, commits of another service (no release run of this pipeline) do not make it fall behind.
+func TestBehindCountsOwnReleasesOnly(t *testing.T) {
+	w := newWorld(time.Hour)
+	w.gh["repos/o/app/commits?sha=main&per_page=100"] = []map[string]any{{"sha": sha("g1")}, {"sha": sha("x2")}, {"sha": sha("x1")}, {"sha": sha("m1")}, {"sha": sha("o1")}}
+	if g := collectTest(t, w).Gate("prod"); g.Behind != 1 {
+		t.Fatalf("behind %d, want 1 (x1, x2, m1: other services / no release)", g.Behind)
 	}
 }

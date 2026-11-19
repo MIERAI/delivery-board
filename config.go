@@ -111,6 +111,7 @@ type Promotion struct {
 		Ref          string            `yaml:"ref"`
 		Inputs       map[string]string `yaml:"inputs"`
 		VersionInput string            `yaml:"versionInput"`
+		SoakInput    string            `yaml:"soakInput"` // optional: the workflow's input for the soak (minutes), so it re-checks it
 	} `yaml:"workflow"`
 
 	prTitle *regexp.Regexp
