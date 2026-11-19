@@ -27,7 +27,8 @@ Assessment: platform component ~80, internal multi-team ~65, open source ~50. Th
    fails on "dev 健康". Judge health by the service's own resources (Argo `status.resources`), list the unhealthy ones.
 6. **Per-service overrides in `services` templates.** storefront-worker (Helm) cannot join `services: [web, api]`
    (different paths / app names), so it is a separate ~20-line pipeline.
-7. **History depth.** Last 100 branch commits, 100 runs, 40 manifests commits: an environment far behind is misjudged.
+7. **History depth, renames.** The manifests history (GitHub commits?path=) does not follow a moved file: after a move the arrival time restarts (soak counted again once).
+   **History depth.** Last 100 branch commits, 100 runs, 40 manifests commits: an environment far behind is misjudged.
    Page further when a tag is not found, or use the revision from (1).
 8. **Promote token.** The button only links to GitHub until `delivery_board.promote_token` is set (fine-grained:
    Actions read/write on gitops-manifests; SOPS → tofu apply).
