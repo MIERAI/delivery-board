@@ -86,6 +86,10 @@ K8S_API=http://127.0.0.1:8001 GITHUB_TOKEN=… go run . -config examples/config.
 
 The board has no login: run it on a private network. Promoting only opens a PR; merging stays on GitHub.
 
+## Roadmap
+
+What is parked and in which order: [ROADMAP.md](ROADMAP.md).
+
 ## Development
 
 `go test ./...` covers the run model against recorded API shapes (design change → gate, soak, health, open PR,
