@@ -36,6 +36,19 @@ Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run 
 | `environments[].argocd`, `.workload` | the cluster | sync / health, the running version, rollout finished |
 | `environments[].promotion` | — | `from`, `soak`, the workflow to dispatch (`inputs`, `versionInput`, `soakInput`), the title of its PRs |
 
+### Discovery
+
+Applications registered by an `app.yaml` in a manifests repository need no configuration here: `discover` turns each
+service of each `*/app.yaml` into a pipeline (format: gitops-manifests `storefront/app.yaml`; refreshed every 2 minutes;
+a descriptor that does not parse is shown and skipped).
+
+```yaml
+discover:
+  - repo: MIERAI/gitops-manifests
+    jobs: { test: test, "image / build": 镜像 }       # release workflow (release-<service>): job → step
+    promotion: { workflow: promote.yml, soakInput: soak }   # inputs app, image, from, to, version
+```
+
 ### Templates
 
 Many pipelines look alike (the services of a monorepo, environments that differ only by name). Two keys and three
@@ -82,7 +95,7 @@ K8S_API=http://127.0.0.1:8001 GITHUB_TOKEN=… go run . -config examples/config.
 |---|---|
 | `GITHUB_TOKEN` | fine-grained, read-only: Actions, Contents, Pull requests (metadata) of the app and manifests repositories |
 | `PROMOTE_TOKEN` | optional, Actions read/write on the repository of the promotion workflow; without it the button links to the workflow |
-| `K8S_API` | local development only; in the cluster the service account is used (RBAC: `get` on the workloads and Argo CD Applications) |
+| `K8S_API` | local development only; in the cluster the service account is used (RBAC: read-only `get` on workloads and Argo CD Applications, cluster-wide so new applications need nothing) |
 
 The board has no login: run it on a private network. Promoting only opens a PR; merging stays on GitHub.
 

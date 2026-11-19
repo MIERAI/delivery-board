@@ -19,6 +19,7 @@ type Config struct {
 	Interval  Duration    `yaml:"interval"`
 	MaxRuns   int         `yaml:"maxRuns"` // per pipeline
 	Pipelines []*Pipeline `yaml:"pipelines"`
+	Discover  []*Discover `yaml:"discover"` // pipelines from app.yaml descriptors in manifests repositories
 
 	loc *time.Location
 }
@@ -34,6 +35,8 @@ type Pipeline struct {
 	Release      *Workflow      `yaml:"release"`
 	Environments []*Environment `yaml:"environments"`
 	Try          *Try           `yaml:"try"`
+
+	discoveredFrom string // the manifests repository of its app.yaml ("" = configured)
 }
 
 // Change: a kind of pull request that starts a run (e.g. a design PR). Its steps are followed in order; a run
@@ -179,8 +182,13 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: timezone: %w", err)
 	}
 	c.loc = loc
-	if len(c.Pipelines) == 0 {
-		return fmt.Errorf("config: no pipelines")
+	if len(c.Pipelines) == 0 && len(c.Discover) == 0 {
+		return fmt.Errorf("config: no pipelines and nothing to discover")
+	}
+	for i, d := range c.Discover {
+		if strings.Count(d.Repo, "/") != 1 {
+			return fmt.Errorf("config: discover[%d].repo must be owner/name", i)
+		}
 	}
 	ids := map[string]bool{}
 	for _, p := range c.Pipelines {

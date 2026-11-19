@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"time"
 )
@@ -22,6 +23,10 @@ type Board struct {
 	mu       sync.RWMutex
 	states   map[string]*PipelineState
 	promoted map[string]time.Time // pipeline/env → last dispatch (rate limit)
+
+	discovered   []*Pipeline // from app.yaml descriptors (cfg.Discover)
+	discoveredAt time.Time
+	discoverErr  string
 
 	cssVersion string
 
@@ -43,8 +48,17 @@ func (b *Board) Loop() {
 }
 
 func (b *Board) refresh() {
+	b.rediscover()
+	pipes := b.Pipelines()
+	b.mu.Lock() // forget pipelines that are gone (an app.yaml removed)
+	for id := range b.states {
+		if !slices.ContainsFunc(pipes, func(p *Pipeline) bool { return p.ID == id }) {
+			delete(b.states, id)
+		}
+	}
+	b.mu.Unlock()
 	var wg sync.WaitGroup
-	for _, p := range b.cfg.Pipelines {
+	for _, p := range pipes {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -80,10 +94,11 @@ func (b *Board) State(id string) *PipelineState {
 }
 
 func (b *Board) All() []*PipelineState {
+	pipes := b.Pipelines()
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	var out []*PipelineState
-	for _, p := range b.cfg.Pipelines {
+	for _, p := range pipes {
 		if s := b.states[p.ID]; s != nil {
 			out = append(out, s)
 		}
@@ -92,7 +107,7 @@ func (b *Board) All() []*PipelineState {
 }
 
 func (b *Board) pipeline(id string) *Pipeline {
-	for _, p := range b.cfg.Pipelines {
+	for _, p := range b.Pipelines() {
 		if p.ID == id {
 			return p
 		}
@@ -224,7 +239,11 @@ func (b *Board) Live(t *Try, path string, body []byte) liveResult {
 }
 
 // for the templates
-func (b *Board) Title() string          { return b.cfg.Title }
-func (b *Board) Pipelines() []*Pipeline { return b.cfg.Pipelines }
-func (b *Board) CSSVersion() string     { return b.cssVersion }
-func (b *Board) CanPromote() bool       { return b.promoteToken != "" }
+func (b *Board) Title() string { return b.cfg.Title }
+func (b *Board) DiscoverError() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.discoverErr
+}
+func (b *Board) CSSVersion() string { return b.cssVersion }
+func (b *Board) CanPromote() bool   { return b.promoteToken != "" }
