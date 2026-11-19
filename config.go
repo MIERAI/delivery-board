@@ -52,7 +52,7 @@ type Change struct {
 //	workflow  before the merge step: the runs of that workflow on the PR's branch (each run = one round)
 //	          after it: the run of that workflow on the current commit (jobs: job name → step name)
 //	merge     the PR is merged; the current commit becomes its merge commit
-//	followPR  a PR opened by automation (head branch regexp, {sha7} = current commit); its merge commit becomes current
+//	followPR  a PR opened by automation (head branch regexp, $(sha7) = current commit); its merge commit becomes current
 type StepDef struct {
 	Stage              string            `yaml:"stage"`
 	Name               string            `yaml:"name"`
@@ -145,7 +145,11 @@ func LoadConfig(path string) (*Config, error) {
 	return ParseConfig(b)
 }
 
-func ParseConfig(b []byte) (*Config, error) {
+func ParseConfig(src []byte) (*Config, error) {
+	b, err := expandConfig(src)
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 	var c Config
 	dec := yaml.NewDecoder(strings.NewReader(string(b)))
 	dec.KnownFields(true)
@@ -227,7 +231,7 @@ func (p *Pipeline) validate() error {
 				return fmt.Errorf("changes[%d].steps[%d]: stage required", i, j)
 			}
 			if s.FollowPR != "" {
-				if _, err := regexp.Compile(strings.ReplaceAll(s.FollowPR, "{sha7}", "0000000")); err != nil {
+				if _, err := regexp.Compile(sha7(s.FollowPR, "0000000")); err != nil {
 					return fmt.Errorf("changes[%d].steps[%d].followPR: %w", i, j, err)
 				}
 			}
@@ -305,4 +309,9 @@ func or(v ...string) string {
 		}
 	}
 	return ""
+}
+
+// sha7 fills the followPR placeholder ($(sha7); {sha7} is accepted too).
+func sha7(pattern, sha string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(pattern, "$(sha7)", sha), "{sha7}", sha)
 }

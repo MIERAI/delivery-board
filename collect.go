@@ -470,7 +470,7 @@ func (c *collector) changeSteps(pr *ghPull, ch *Change) (steps []Step, sha strin
 			}
 			steps = append(steps, c.jobSteps(r, sd.Stage, sd.Name, sd.Jobs)...)
 		case sd.FollowPR != "":
-			re := regexp.MustCompile(strings.ReplaceAll(sd.FollowPR, "{sha7}", short(sha)))
+			re := regexp.MustCompile(sha7(sd.FollowPR, short(sha)))
 			var f *ghPull
 			for i := range c.pulls {
 				if re.MatchString(c.pulls[i].Head.Ref) {

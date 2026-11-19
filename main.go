@@ -16,8 +16,21 @@ func main() {
 	cfgPath := flag.String("config", "/etc/delivery-board/config.yaml", "pipelines")
 	addr := flag.String("addr", ":8080", "listen address")
 	check := flag.Bool("check", false, "validate the config and exit")
+	printCfg := flag.Bool("print-config", false, "print the config with services / defaults expanded, and exit")
 	flag.Parse()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	if *printCfg {
+		src, err := os.ReadFile(*cfgPath)
+		if err == nil {
+			src, err = expandConfig(src)
+		}
+		if err != nil {
+			slog.Error("config", "err", err)
+			os.Exit(2)
+		}
+		os.Stdout.Write(src)
+		return
+	}
 	cfg, err := LoadConfig(*cfgPath)
 	if err != nil {
 		slog.Error("config", "err", err)

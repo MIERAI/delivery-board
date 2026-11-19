@@ -29,12 +29,39 @@ Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run 
 | `changes[]` | pull requests (head branch / title regexp) | a run per matching PR; `items` names it from the changed files |
 | `steps[].workflow` | workflow runs | before `merge`: runs on the PR branch (rounds); after: the run on the current commit (`jobs`: job → step) |
 | `steps[].merge` | the PR | merged → the current commit is its merge commit |
-| `steps[].followPR` | pull requests | a PR opened by automation for the current commit (`{sha7}`); its merge commit becomes current |
+| `steps[].followPR` | pull requests | a PR opened by automation for the current commit (`$(sha7)`); its merge commit becomes current |
 | `push` | release runs on the branch | commits that no change covers are runs too |
 | `release` | workflow run on the commit | build and deploy to the first environment |
 | `environments[].manifests` | commits of a file in the manifests repo | the desired version (image tag) and when it arrived |
 | `environments[].argocd`, `.workload` | the cluster | sync / health, the running version, rollout finished |
 | `environments[].promotion` | — | `from`, `soak`, the workflow to dispatch (`inputs`, `versionInput`, `soakInput`), the title of its PRs |
+
+### Templates
+
+Many pipelines look alike (the services of a monorepo, environments that differ only by name). Two keys and three
+placeholders expand the configuration before it is validated; `-print-config` prints the result.
+
+```yaml
+  - id: storefront
+    repo: MIERAI/storefront
+    services: [web, api]                     # → pipelines storefront-web, storefront-api; $(service) = the service
+    release: { name: release-$(service) }
+    defaults:
+      environment:                           # merged under every environment; $(env) = its name
+        manifests: { repo: MIERAI/gitops-manifests, path: storefront/overlays/$(env)/kustomization.yaml, image: ghcr.io/mierai/storefront-$(service) }
+        argocd: { app: storefront-$(env) }
+        workload: { namespace: storefront-$(env), name: $(service), container: $(service) }
+      promotion:                             # merged under every promotion; $(from) = its from
+        prTitle: ^promote storefront storefront-$(service) → $(env)$
+        workflow: { file: promote.yml, inputs: { app: storefront, image: ghcr.io/mierai/storefront-$(service), from: $(from), to: $(env) } }
+    environments:
+      - name: dev
+      - { name: staging, promotion: { from: dev, soak: 5m } }
+      - { name: prod, promotion: { from: staging, soak: 10m } }
+```
+
+An environment's own keys win over the defaults (mappings merge key by key). A placeholder outside its scope is an
+error. `followPR` has its own: `$(sha7)`, the current commit.
 
 A commit is *in* an environment when the environment's version is that commit or a later one of the branch.
 "Behind" counts the pipeline's own releases (in a monorepo, other services' commits do not count).
@@ -47,6 +74,7 @@ PR), a plain push pipeline with canary Rollouts, and a monorepo whose services s
 
 ```sh
 go run . -config examples/config.yaml -check            # validate
+go run . -config examples/config.yaml -print-config     # with services / defaults expanded
 K8S_API=http://127.0.0.1:8001 GITHUB_TOKEN=… go run . -config examples/config.yaml -addr :8080   # kubectl proxy
 ```
 
