@@ -23,6 +23,8 @@ Assessment: platform component ~80, internal multi-team ~65, open source ~50. Th
 4. **Metrics gate.** The gate checks health and soak, not quality: sample-app `1f67fe5` (FAULT_HELLO=contention, a load
    regression) shows "可以 promote". Add Prometheus checks per promotion (error ratio, p95 of the version in `from`);
    later read the SLO error budget (the SLO project).
+   DORA metrics and two delivery SLOs exist (docs/dora.md); the error budget policy (blueprint docs/slo.md §6:
+   budget exhausted → feature promotions to prod stop) belongs here too.
 5. **Why a gate is blocked, per service.** web and api share the Argo app `storefront-dev`: api broken → web's gate
    fails on "dev 健康". Judge health by the service's own resources (Argo `status.resources`), list the unhealthy ones.
 6. **Per-service overrides in `services` templates.** storefront-worker (Helm) cannot join `services: [web, api]`

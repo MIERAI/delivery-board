@@ -340,7 +340,7 @@ func (b *Board) apiState() any {
 				Status: r.Status(), Items: r.Items, Created: r.Created, Steps: r.Steps})
 		}
 		out = append(out, map[string]any{"pipeline": s.P.ID, "title": s.P.Title, "updated": s.Updated, "error": s.Error,
-			"environments": s.Envs, "gates": s.Gates, "runs": runs})
+			"environments": s.Envs, "gates": s.Gates, "delivery": s.Delivery, "runs": runs})
 	}
 	return map[string]any{"pipelines": out}
 }
@@ -374,6 +374,7 @@ func (b *Board) metrics() string {
 		}
 		fmt.Fprintf(&w, "delivery_board_last_update_age_seconds{pipeline=%q} %.0f\n", s.P.ID, age)
 	}
+	b.doraMetrics(&w)
 	return w.String()
 }
 

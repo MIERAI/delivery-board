@@ -113,12 +113,14 @@ type Check struct {
 }
 
 type PipelineState struct {
-	P       *Pipeline
-	Runs    []*Run
-	Envs    []*EnvState
-	Gates   []*Gate
-	Updated time.Time
-	Error   string
+	P     *Pipeline
+	Runs  []*Run
+	Envs  []*EnvState
+	Gates []*Gate
+	// Delivery: the deployments of each environment (DORA metrics), in the order of the environments
+	Delivery []*EnvDelivery
+	Updated  time.Time
+	Error    string
 }
 
 func (ps *PipelineState) Env(name string) *EnvState {
@@ -151,11 +153,13 @@ type collector struct {
 	last  map[string]*ghRun // workflow name + sha → newest run
 	envs  map[string]*EnvState
 	hist  map[string][]Version
+	full  map[string]bool // the history reaches the manifests file's first commit
+	br    *branchInfo
 }
 
 func collectPipeline(gh GitHub, k Kube, p *Pipeline, maxRuns int, now func() time.Time) (*PipelineState, error) {
 	c := &collector{gh: gh, kube: k, now: now, max: maxRuns, p: p, pos: map[string]int{}, last: map[string]*ghRun{},
-		envs: map[string]*EnvState{}, hist: map[string][]Version{}}
+		envs: map[string]*EnvState{}, hist: map[string][]Version{}, full: map[string]bool{}}
 	return c.collect()
 }
 
@@ -168,6 +172,7 @@ func (c *collector) collect() (*PipelineState, error) {
 	for i, cm := range commits {
 		c.pos[short(cm.SHA)] = i
 	}
+	c.br = newBranchInfo(commits)
 	if len(p.Changes) > 0 {
 		if err := c.gh.Get(fmt.Sprintf("repos/%s/pulls?state=all&per_page=50&sort=created&direction=desc", p.Repo), false, &c.pulls); err != nil {
 			return nil, err
@@ -206,6 +211,9 @@ func (c *collector) collect() (*PipelineState, error) {
 			ps.Gates = append(ps.Gates, g)
 		}
 	}
+	for _, e := range p.Environments {
+		ps.Delivery = append(ps.Delivery, deployments(e.Name, c.hist[e.Name], c.full[e.Name], c.br))
+	}
 	ps.Runs = c.runs2(ps)
 	return ps, nil
 }
@@ -217,6 +225,7 @@ func (c *collector) history(e *Environment) ([]Version, error) {
 	if err := c.gh.Get(fmt.Sprintf("repos/%s/commits?path=%s&per_page=40", m.Repo, url.QueryEscape(m.Path)), false, &commits); err != nil {
 		return nil, err
 	}
+	c.full[e.Name] = len(commits) < 40
 	var out []Version
 	for _, cm := range commits {
 		var f struct {

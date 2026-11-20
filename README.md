@@ -20,7 +20,8 @@ design PR ─ AI review ─ merge ─ generate ─ generated PR ─ release ─ 
   start a run, which workflows and jobs are its steps, which manifests file and workload are an environment.
 
 Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run as a flow graph), `/api/state` (JSON),
-`/metrics` (Prometheus: run status, promotion ready, commits behind), `/healthz`.
+`/metrics` (Prometheus: run status, promotion ready, commits behind, DORA metrics: [docs/dora.md](docs/dora.md)),
+`/healthz`.
 
 ## Model
 
