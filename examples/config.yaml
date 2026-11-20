@@ -54,3 +54,9 @@ discover:
     push: { label: 提交 }
     jobs: { test: test, "image / build": 镜像, "promote / promote": 推送 dev }
     promotion: { workflow: promote.yml, soakInput: soak }
+
+# Error budget policy (blueprint docs/slo.md §6) for promotions into prod, from Pyrra's rules: docs/error-budget.md.
+# promote.yml takes the inputs change (feature | fix | exception) and reason.
+errorBudget:
+  prometheus: http://kps-prometheus.monitoring.svc:9090
+  environments: [prod]

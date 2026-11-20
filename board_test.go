@@ -137,11 +137,16 @@ func (w *world) workload(ns, tag string) {
 
 func collectTest(t *testing.T, w *world) *PipelineState {
 	t.Helper()
+	return collectBudget(t, w, nil)
+}
+
+func collectBudget(t *testing.T, w *world, budget func(app, env string) *Budget) *PipelineState {
+	t.Helper()
 	cfg, err := ParseConfig([]byte(testConfig))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps, err := collectPipeline(w.gh, w.kube, cfg.Pipelines[0], 12, func() time.Time { return t0 })
+	ps, err := collectPipeline(w.gh, w.kube, cfg.Pipelines[0], 12, func() time.Time { return t0 }, budget)
 	if err != nil {
 		t.Fatal(err)
 	}

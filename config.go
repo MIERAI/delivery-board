@@ -20,6 +20,8 @@ type Config struct {
 	MaxRuns   int         `yaml:"maxRuns"` // per pipeline
 	Pipelines []*Pipeline `yaml:"pipelines"`
 	Discover  []*Discover `yaml:"discover"` // pipelines from app.yaml descriptors in manifests repositories
+	// ErrorBudget: gate promotions into these environments on the app's SLO error budget (budget.go); nil = off
+	ErrorBudget *ErrorBudget `yaml:"errorBudget"`
 
 	loc *time.Location
 }
@@ -28,6 +30,7 @@ type Config struct {
 type Pipeline struct {
 	ID           string         `yaml:"id"`
 	Title        string         `yaml:"title"`
+	App          string         `yaml:"app"`    // the application of its SLOs (Pyrra label app); default the id
 	Repo         string         `yaml:"repo"`   // application repository, owner/name
 	Branch       string         `yaml:"branch"` // default main
 	Changes      []*Change      `yaml:"changes"`
@@ -185,6 +188,11 @@ func (c *Config) validate() error {
 	if len(c.Pipelines) == 0 && len(c.Discover) == 0 {
 		return fmt.Errorf("config: no pipelines and nothing to discover")
 	}
+	if c.ErrorBudget != nil {
+		if err := c.ErrorBudget.validate(); err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
+	}
 	for i, d := range c.Discover {
 		if strings.Count(d.Repo, "/") != 1 {
 			return fmt.Errorf("config: discover[%d].repo must be owner/name", i)
@@ -212,6 +220,7 @@ func (p *Pipeline) validate() error {
 	if p.Title == "" {
 		p.Title = p.ID
 	}
+	p.App = or(p.App, p.ID)
 	if strings.Count(p.Repo, "/") != 1 {
 		return fmt.Errorf("repo must be owner/name")
 	}

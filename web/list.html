@@ -16,7 +16,8 @@
   <a class="mc" href="/?p={{$s.P.ID}}">{{if $e}}
     <div><span class="dot{{if not $e.Healthy}} bad{{end}}" title="{{$e.Sync}}/{{$e.Health}}{{if $e.Error}} · {{$e.Error}}{{end}}"></span><b class="mono">{{or $e.Tag "?"}}</b></div>
     {{if $g}}<div class="gs {{if $g.OpenPR}}wait{{else if $g.Ready}}ok{{else if $g.UpToDate}}same{{else}}ng{{end}}">
-      {{if $g.OpenPR}}#{{$g.OpenPR.Number}} 等合并{{else if $g.UpToDate}}已同步{{else if $g.Ready}}落后 {{$g.Behind}} · 可以 promote{{else}}等门槛: {{$g.Failing}}{{end}}</div>{{end}}
+      {{if $g.OpenPR}}#{{$g.OpenPR.Number}} 等合并{{if $g.OpenPRPolicy}} · 预算不符{{end}}{{else if $g.UpToDate}}已同步{{else if $g.Ready}}落后 {{$g.Behind}} · 可以 promote{{else if $g.Overridable}}落后 {{$g.Behind}} · {{$g.Need}}{{else}}等门槛: {{$g.Failing}}{{end}}</div>
+    {{with $g.Budget}}<div class="gb {{.Verdict}}" title="{{.Detail}}">预算 {{if .Remaining}}{{pct .Remaining}}{{else}}?{{end}} · {{verdictWord .Verdict}}</div>{{end}}{{end}}
   {{else}}<span class="mut">—</span>{{end}}</a>
   {{end}}{{end}}
 </div></div>
@@ -31,12 +32,19 @@
       {{else}}{{.Env}} <b class="mono">{{or .Current "?"}}</b> → 候选 <b class="mono">{{.Candidate}}</b>{{if gt .Behind 0}} · 落后 <b>{{.Behind}}</b> 个版本{{end}}{{end}}</div></div>
     <div class="act">
     {{if .OpenPR}}<a class="btn" href="{{.OpenPR.HTMLURL}}" target="_blank">#{{.OpenPR.Number}} 等合并 ↗</a>
-    {{else if and .Ready $b.CanPromote}}<form method="post" action="/promote/{{$s.P.ID}}/{{.Env}}"><button class="btn primary">Promote {{.Candidate}} → {{.Env}}</button></form>
-    {{else if .Ready}}<a class="btn primary" href="{{.WorkflowURL}}" target="_blank">在 GitHub 上 Promote ↗</a>
+    {{else if and (or .Ready .Overridable) $b.CanPromote}}<form method="post" action="/promote/{{$s.P.ID}}/{{.Env}}" class="pf">
+      {{if .Budget}}<select name="change" title="改动类型(错误预算政策)"><option value="feature">feature</option><option value="fix">fix / 可靠性</option><option value="exception">exception(例外)</option></select>
+      <input name="reason" placeholder="理由{{if .Overridable}}(必填){{else}}(可选){{end}}"{{if .Overridable}} required{{end}}>{{end}}
+      <button class="btn primary">Promote {{.Candidate}} → {{.Env}}</button></form>
+    {{else if or .Ready .Overridable}}<a class="btn primary" href="{{.WorkflowURL}}" target="_blank">在 GitHub 上 Promote ↗</a>
     {{else if .UpToDate}}<span class="btn off">✓ 已同步</span>
     {{else}}<span class="btn off">还不能 promote</span>{{end}}
     </div>
   </div>
+  {{with .Budget}}<div class="budget"><b>错误预算 {{.Env}}(28d)</b> <span class="gb {{.Verdict}}">{{verdictWord .Verdict}}</span> <span class="mut">{{.Detail}}</span>
+    {{if ne .Verdict "pass"}}<div class="mut sm">{{if eq .Verdict "needs-reason"}}promote 时写明理由(reason){{else}}只允许 change: fix(修复 / 可靠性改进,回滚也是)或 change: exception(明确的例外,写进 postmortem),都要写理由(reason){{end}}{{if not $b.CanPromote}} · 在 GitHub 上运行 promote 时填 change / reason{{end}}</div>{{end}}
+    <div class="slos">{{range .SLOs}}<span class="slo{{if .FastBurn}} burn{{end}}" title="objective {{.Objective}}">{{.SLO}} <b>{{if .Remaining}}{{pct .Remaining}}{{else}}无数据{{end}}</b></span>{{end}}</div></div>{{end}}
+  {{if .OpenPR}}{{if .Budget}}<div class="budget mut sm">#{{.OpenPR.Number}} 声明: change: <b>{{.OpenPRChange}}</b>{{if .OpenPRReason}} · reason: {{.OpenPRReason}}{{end}}{{if .OpenPRPolicy}} · <span class="gb fix-only">不符合预算政策: {{.OpenPRPolicy}}</span>{{end}}</div>{{end}}{{end}}
   {{if not .UpToDate}}<div class="checks">{{range .Checks}}<span class="chk {{if .OK}}ok{{else}}ng{{end}}">{{if .OK}}✓{{else}}✕{{end}} {{.Name}}{{if .Detail}}<i>{{.Detail}}</i>{{end}}</span>{{end}}</div>{{else}}<div class="checks"></div>{{end}}
 </div>
 {{end}}

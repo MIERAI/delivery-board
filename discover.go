@@ -118,7 +118,7 @@ func pipelinesOf(raw []byte, dir string, d *Discover) ([]*Pipeline, error) {
 		if len(a.Services) == 1 { // a single service is the application
 			id, title = a.Name, a.Name
 		}
-		p := &Pipeline{ID: id, Title: title, Repo: a.Repo, Push: d.Push, discoveredFrom: d.Repo,
+		p := &Pipeline{ID: id, Title: title, App: a.Name, Repo: a.Repo, Push: d.Push, discoveredFrom: d.Repo,
 			Release: &Workflow{Name: or(s.Release, "release-"+s.Name), Jobs: d.Jobs}}
 		if p.Push == nil {
 			p.Push = &Push{Label: "push"}

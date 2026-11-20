@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,6 +35,11 @@ type Board struct {
 
 	liveMu sync.Mutex
 	live   map[string]liveResult
+
+	// error budgets (budget.go), refreshed with the pipelines (under mu)
+	prom      *http.Client // nil: a default client
+	budgets   map[string]*Budget
+	budgetErr string
 }
 
 func NewBoard(cfg *Config) *Board {
@@ -51,6 +57,7 @@ func (b *Board) Loop() {
 
 func (b *Board) refresh() {
 	b.rediscover()
+	b.refreshBudgets()
 	pipes := b.Pipelines()
 	b.mu.Lock() // forget pipelines that are gone (an app.yaml removed)
 	for id := range b.states {
@@ -71,7 +78,7 @@ func (b *Board) refresh() {
 }
 
 func (b *Board) refreshOne(p *Pipeline) *PipelineState {
-	ps, err := collectPipeline(b.gh, b.kube, p, b.cfg.MaxRuns, b.now)
+	ps, err := collectPipeline(b.gh, b.kube, p, b.cfg.MaxRuns, b.now, b.budget)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err != nil {
@@ -119,8 +126,9 @@ func (b *Board) pipeline(id string) *Pipeline {
 }
 
 // Promote dispatches the promotion workflow of env with the candidate version, after re-checking the gate on fresh
-// data. A person still merges the PR it opens.
-func (b *Board) Promote(pipeline, env string) (string, error) {
+// data. A person still merges the PR it opens. change and reason: what the promotion declares for the error budget
+// policy (budget.go); passed to the workflow, which writes them into the PR.
+func (b *Board) Promote(pipeline, env, change, reason string) (string, error) {
 	p := b.pipeline(pipeline)
 	if p == nil || p.env(env) == nil || p.env(env).Promotion == nil {
 		return "", fmt.Errorf("没有这个 promote: %s/%s", pipeline, env)
@@ -135,18 +143,23 @@ func (b *Board) Promote(pipeline, env string) (string, error) {
 		return "", fmt.Errorf("一分钟内刚发起过,请稍等")
 	}
 	b.mu.Unlock()
+	b.refreshBudgets()
 	ps := b.refreshOne(p)
 	if ps == nil {
 		return "", fmt.Errorf("刷新失败,没有发起")
 	}
 	g := ps.Gate(env)
-	if !g.Ready {
-		return "", fmt.Errorf("门槛没通过: %s", g.failing())
+	if ok, why := g.Allows(change, reason); !ok {
+		return "", fmt.Errorf("%s", why)
 	}
 	pr := p.env(env).Promotion
 	inputs := map[string]string{}
 	for k, v := range pr.Workflow.Inputs {
 		inputs[k] = v
+	}
+	if g.Budget != nil {
+		eb := b.cfg.ErrorBudget
+		inputs[eb.Inputs.Change], inputs[eb.Inputs.Reason] = or(strings.TrimSpace(change), ChangeFeature), strings.TrimSpace(reason)
 	}
 	inputs[pr.Workflow.VersionInput] = g.Candidate
 	if pr.Workflow.SoakInput != "" {
