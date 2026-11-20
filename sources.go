@@ -80,6 +80,7 @@ type ghCommit struct {
 	SHA     string `json:"sha"`
 	HTMLURL string `json:"html_url"`
 	Commit  struct {
+		Message   string `json:"message"`
 		Committer struct {
 			Date time.Time `json:"date"`
 		} `json:"committer"`

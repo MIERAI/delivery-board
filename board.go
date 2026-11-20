@@ -24,6 +24,8 @@ type Board struct {
 	states   map[string]*PipelineState
 	promoted map[string]time.Time // pipeline/env → last dispatch (rate limit)
 
+	events doraEvents // DORA counters (under mu)
+
 	discovered   []*Pipeline // from app.yaml descriptors (cfg.Discover)
 	discoveredAt time.Time
 	discoverErr  string
@@ -84,6 +86,7 @@ func (b *Board) refreshOne(p *Pipeline) *PipelineState {
 		return nil
 	}
 	b.states[p.ID] = ps
+	b.events.observe(ps)
 	return ps
 }
 
