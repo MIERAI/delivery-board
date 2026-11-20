@@ -105,6 +105,12 @@ type Gate struct {
 	UpToDate           bool // Env already runs From's version: nothing to promote
 	OpenPR             *ghPull
 	WorkflowURL        string
+	// error budget (budget.go): nil when promotions into Env are not gated
+	Budget       *Budget
+	Overridable  bool   // only the budget fails: a promotion stating a reason (and below zero: a fix) may pass
+	OpenPRChange string // the open promotion PR's declared change kind and reason ("Change:" / "Reason:" lines)
+	OpenPRReason string
+	OpenPRPolicy string // why the open PR does not satisfy the budget policy ("" = it does, or not gated)
 }
 
 type Check struct {
@@ -155,11 +161,13 @@ type collector struct {
 	hist  map[string][]Version
 	full  map[string]bool // the history reaches the manifests file's first commit
 	br    *branchInfo
+	// budget: the error budget of an app in an environment (nil, or returning nil: not gated)
+	budget func(app, env string) *Budget
 }
 
-func collectPipeline(gh GitHub, k Kube, p *Pipeline, maxRuns int, now func() time.Time) (*PipelineState, error) {
+func collectPipeline(gh GitHub, k Kube, p *Pipeline, maxRuns int, now func() time.Time, budget func(app, env string) *Budget) (*PipelineState, error) {
 	c := &collector{gh: gh, kube: k, now: now, max: maxRuns, p: p, pos: map[string]int{}, last: map[string]*ghRun{},
-		envs: map[string]*EnvState{}, hist: map[string][]Version{}, full: map[string]bool{}}
+		envs: map[string]*EnvState{}, hist: map[string][]Version{}, full: map[string]bool{}, budget: budget}
 	return c.collect()
 }
 
@@ -355,6 +363,9 @@ func (c *collector) gate(e *Environment) (*Gate, error) {
 	g.Ready = true
 	for _, ch := range g.Checks {
 		g.Ready = g.Ready && ch.OK
+	}
+	if c.budget != nil {
+		applyBudget(g, c.budget(c.p.App, e.Name))
 	}
 	return g, nil
 }
@@ -597,6 +608,8 @@ func (c *collector) delivery(sha string, ps *PipelineState) []Step {
 					s.URL, s.Note = g.OpenPR.HTMLURL, fmt.Sprintf("#%d 等合并", g.OpenPR.Number)
 				} else if g.Ready {
 					s.URL, s.Note = g.WorkflowURL, "可以 promote"
+				} else if g.Overridable {
+					s.URL, s.Note = g.WorkflowURL, "可以 promote("+g.Need()+")"
 				} else {
 					s.URL, s.Note = g.WorkflowURL, "等门槛: "+g.failing()
 				}

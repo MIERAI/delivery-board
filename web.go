@@ -113,6 +113,15 @@ func (b *Board) funcs() template.FuncMap {
 			return strings.TrimSuffix(c.Stage+" · "+c.Name+" · "+c.Note, " · ")
 		},
 		"lower": strings.ToLower,
+		"pct": func(f *float64) string {
+			if f == nil {
+				return "?"
+			}
+			return pct(*f)
+		},
+		"verdictWord": func(v string) string {
+			return map[string]string{VerdictPass: "可以", VerdictReason: "需要理由", VerdictFixOnly: "只允许修复"}[v]
+		},
 		"spanOf": func(r *Run) []time.Time {
 			a, z := r.Span()
 			return []time.Time{a, z}
@@ -253,7 +262,7 @@ func (b *Board) Handler() http.Handler {
 			http.Error(w, "cross-origin request refused", http.StatusForbidden)
 			return
 		}
-		v, err := b.Promote(r.PathValue("pipeline"), r.PathValue("env"))
+		v, err := b.Promote(r.PathValue("pipeline"), r.PathValue("env"), r.FormValue("change"), r.FormValue("reason"))
 		q := url.Values{"p": {r.PathValue("pipeline")}}
 		if err != nil {
 			q.Set("error", err.Error())
@@ -265,6 +274,33 @@ func (b *Board) Handler() http.Handler {
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(b.apiState())
+	})
+	// dry run of a promotion: would the gate let it through with this change kind and reason? (cached state; nothing
+	// is dispatched). ?change=feature|fix|exception&reason=…
+	mux.HandleFunc("GET /api/gate/{pipeline}/{env}", func(w http.ResponseWriter, r *http.Request) {
+		ps := b.State(r.PathValue("pipeline"))
+		var g *Gate
+		if ps != nil {
+			g = ps.Gate(r.PathValue("env"))
+		}
+		if g == nil {
+			http.NotFound(w, r)
+			return
+		}
+		change, reason := or(r.URL.Query().Get("change"), ChangeFeature), r.URL.Query().Get("reason")
+		ok, why := g.Allows(change, reason)
+		// verdict: the gate as a whole (blocked: a check other than the budget fails); budgetVerdict: the budget alone
+		verdict, budgetVerdict := "blocked", ""
+		if g.Budget != nil {
+			budgetVerdict = g.Budget.Verdict
+		}
+		if g.Ready || g.Overridable {
+			verdict = or(budgetVerdict, VerdictPass)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"pipeline": ps.P.ID, "app": ps.P.App, "env": g.Env, "candidate": g.Candidate,
+			"verdict": verdict, "budgetVerdict": budgetVerdict, "change": change, "reason": reason, "allowed": ok, "why": why,
+			"checks": g.Checks, "budget": g.Budget, "updated": ps.Updated})
 	})
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -364,6 +400,20 @@ func (b *Board) metrics() string {
 			if g.Behind >= 0 {
 				fmt.Fprintf(&w, "delivery_env_behind_commits{pipeline=%q,env=%q} %d\n", s.P.ID, g.Env, g.Behind)
 			}
+		}
+	}
+	w.WriteString("# HELP delivery_error_budget_remaining_ratio lowest share of the error budget left among the app's SLOs in the target environment of a gated promotion (1 untouched, <= 0 exhausted)\n# TYPE delivery_error_budget_remaining_ratio gauge\n")
+	w.WriteString("# HELP delivery_promotion_budget_verdict error budget policy for a promotion: 0 pass, 1 needs a reason, 2 fixes and exceptions only\n# TYPE delivery_promotion_budget_verdict gauge\n")
+	for _, s := range b.All() {
+		for _, g := range s.Gates {
+			if g.Budget == nil {
+				continue
+			}
+			if r := g.Budget.Remaining; r != nil {
+				fmt.Fprintf(&w, "delivery_error_budget_remaining_ratio{pipeline=%q,env=%q} %g\n", s.P.ID, g.Env, *r)
+			}
+			fmt.Fprintf(&w, "delivery_promotion_budget_verdict{pipeline=%q,env=%q,level=%q} %d\n", s.P.ID, g.Env, g.Budget.Level,
+				map[string]int{VerdictPass: 0, VerdictReason: 1, VerdictFixOnly: 2}[g.Budget.Verdict])
 		}
 	}
 	w.WriteString("# HELP delivery_board_last_update_age_seconds seconds since the last successful refresh\n# TYPE delivery_board_last_update_age_seconds gauge\n")

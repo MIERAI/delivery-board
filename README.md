@@ -16,10 +16,14 @@ design PR ─ AI review ─ merge ─ generate ─ generated PR ─ release ─ 
 - **Promotion gate.** For each promotion: is there a newer version, is the source environment healthy and running it,
   has it run there long enough (soak), is no promotion already open. The *Promote* button re-checks the gate and starts
   your promotion workflow; a person still merges the PR it opens.
+- **Error budget.** Promotions into prod also check the app's SLO error budget (Pyrra, 28d): over 25% left passes,
+  0–25% needs a stated reason, exhausted / fast burn / unknown lets only fixes and explicit exceptions through
+  ([docs/error-budget.md](docs/error-budget.md)).
 - **One program, any pipeline.** Pipelines are configuration ([examples/config.yaml](examples/config.yaml)): which PRs
   start a run, which workflows and jobs are its steps, which manifests file and workload are an environment.
 
 Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run as a flow graph), `/api/state` (JSON),
+`/api/gate/<pipeline>/<env>?change=&reason=` (dry run of a promotion),
 `/metrics` (Prometheus: run status, promotion ready, commits behind, DORA metrics: [docs/dora.md](docs/dora.md)),
 `/healthz`.
 
@@ -36,6 +40,7 @@ Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run 
 | `environments[].manifests` | commits of a file in the manifests repo | the desired version (image tag) and when it arrived: a kustomization (`images[name].newTag`) or Helm values (the mapping `{repository: <image>, tag}`, or `key: a.b.tag`) |
 | `environments[].argocd`, `.workload` | the cluster | sync / health, the running version, rollout finished |
 | `environments[].promotion` | — | `from`, `soak`, the workflow to dispatch (`inputs`, `versionInput`, `soakInput`), the title of its PRs |
+| `errorBudget` | Prometheus (Pyrra rules) | gate promotions into these environments on the error budget of the pipeline's `app` ([docs/error-budget.md](docs/error-budget.md)) |
 
 ### Discovery
 

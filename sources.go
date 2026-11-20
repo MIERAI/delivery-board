@@ -90,6 +90,7 @@ type ghCommit struct {
 type ghPull struct {
 	Number         int        `json:"number"`
 	Title          string     `json:"title"`
+	Body           string     `json:"body"`
 	State          string     `json:"state"`
 	HTMLURL        string     `json:"html_url"`
 	CreatedAt      time.Time  `json:"created_at"`

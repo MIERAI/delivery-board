@@ -78,3 +78,8 @@ pre{margin:0;background:var(--soft);border:1px solid var(--line);border-radius:8
 .gs{font-size:12px;margin-top:3px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gs.ok{color:var(--done)}.gs.ng{color:var(--failed)}.gs.wait{color:var(--person)}.gs.same{color:var(--faint)}
 a.env:hover{background:rgba(255,255,255,.24)}
 @media (max-width:900px){.mx{overflow-x:auto}}
+
+.budget{padding:2px 18px 8px;font-size:13px}.budget .slos{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.slo{font-size:12px;border:1px solid var(--line);border-radius:7px;padding:2px 8px;color:var(--mut)}.slo b{color:var(--fg);font-weight:600}.slo.burn{border-color:var(--failed);color:var(--failed)}
+.gb{font-size:12px;font-weight:600}.gb.pass{color:var(--done)}.gb.needs-reason{color:var(--person)}.gb.fix-only{color:var(--failed)}
+.pf{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.pf select,.pf input{font:13px/1.4 inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--card);color:var(--fg)}.pf input{width:220px}
