@@ -27,6 +27,12 @@ Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run 
 `/metrics` (Prometheus: run status, promotion ready, commits behind, DORA metrics: [docs/dora.md](docs/dora.md)),
 `/healthz`.
 
+Run states: 成功 done, 进行中 running, 等人处理 waiting for a person (review answer, merge, promote), 失败 failed,
+未开始 waiting, 无法观测 unknown (git delivered the version to an environment the board cannot see), 已被取代
+superseded: a newer run of the pipeline (a later commit, so it includes this one) has reached or waits at the same
+delivery step, so delivering it delivers this one too. A superseded run is dimmed, says "已包含在 <sha>" and is not
+counted as waiting; only the newest run keeps the promote. What is done stays done.
+
 ## Model
 
 | Config | Source | Meaning |
@@ -39,6 +45,7 @@ Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run 
 | `release` | workflow run on the commit | build and deploy to the first environment |
 | `environments[].manifests` | commits of a file in the manifests repo | the desired version (image tag) and when it arrived: a kustomization (`images[name].newTag`) or Helm values (the mapping `{repository: <image>, tag}`, or `key: a.b.tag`) |
 | `environments[].argocd`, `.workload` | the cluster | sync / health, the running version, rollout finished |
+| `environments[].unobserved` | — | the environment's cluster is not the board's (e.g. a lab): once git has a version it shows as 无法观测 (unknown), never as running. Also automatic while neither the workload nor the Argo CD Application can be read. `unobserved: true` on an `app.yaml` environment too |
 | `environments[].promotion` | — | `from`, `soak`, the workflow to dispatch (`inputs`, `versionInput`, `soakInput`), the title of its PRs |
 | `errorBudget` | Prometheus (Pyrra rules) | gate promotions into these environments on the error budget of the pipeline's `app` ([docs/error-budget.md](docs/error-budget.md)) |
 

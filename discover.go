@@ -29,9 +29,10 @@ type appDesc struct {
 	Name         string `yaml:"name"`
 	Repo         string `yaml:"repo"`
 	Environments []struct {
-		Name      string `yaml:"name"`
-		URL       string `yaml:"url"`
-		Promotion *struct {
+		Name       string `yaml:"name"`
+		URL        string `yaml:"url"`
+		Unobserved bool   `yaml:"unobserved"` // its cluster is not the board's (Environment.Unobserved)
+		Promotion  *struct {
 			From string   `yaml:"from"`
 			Soak Duration `yaml:"soak"`
 		} `yaml:"promotion"`
@@ -124,7 +125,7 @@ func pipelinesOf(raw []byte, dir string, d *Discover) ([]*Pipeline, error) {
 			p.Push = &Push{Label: "push"}
 		}
 		for _, env := range a.Environments {
-			e := &Environment{Name: env.Name, URL: env.URL}
+			e := &Environment{Name: env.Name, URL: env.URL, Unobserved: env.Unobserved}
 			e.Manifests.Repo, e.Manifests.Image = d.Repo, s.Image
 			if comp.Helm != "" {
 				e.Manifests.Path = path.Join(dir, comp.Helm, "values-"+env.Name+".yaml")

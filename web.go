@@ -20,15 +20,21 @@ import (
 //go:embed web/*.html web/style.css
 var webFS embed.FS
 
-var words = map[string]string{Done: "成功", Running: "进行中", Person: "等人处理", Failed: "失败", Waiting: "未开始", Skip: "跳过"}
+var words = map[string]string{Done: "成功", Running: "进行中", Person: "等人处理", Failed: "失败", Waiting: "未开始", Skip: "跳过",
+	Unknown: "无法观测", Superseded: "已被取代"}
+
+// summaryOrder: the statuses the list counts, in the order shown (a superseded run counts only as superseded).
+var summaryOrder = []string{Person, Running, Failed, Unknown, Waiting, Superseded}
 
 var svg = map[string]string{ // 16px icons, stroke = currentColor
-	Done:    `<path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
-	Failed:  `<path d="M4.5 4.5l7 7m0-7l-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
-	Running: `<path d="M8 2a6 6 0 1 1-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
-	Person:  `<path d="M6 4v8M10 4v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
-	Waiting: `<circle cx="8" cy="8" r="2" fill="currentColor"/>`,
-	Skip:    `<path d="M4 8h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+	Done:       `<path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+	Failed:     `<path d="M4.5 4.5l7 7m0-7l-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+	Running:    `<path d="M8 2a6 6 0 1 1-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+	Person:     `<path d="M6 4v8M10 4v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+	Waiting:    `<circle cx="8" cy="8" r="2" fill="currentColor"/>`,
+	Skip:       `<path d="M4 8h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+	Unknown:    `<path d="M6 6.2a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="12" r="1" fill="currentColor"/>`,
+	Superseded: `<path d="M3.5 4.5l3.5 3.5-3.5 3.5M8.5 4.5l3.5 3.5-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
 }
 
 func icon(st string, size int) template.HTML {
@@ -105,6 +111,9 @@ func (b *Board) funcs() template.FuncMap {
 		"now": func(r *Run) string {
 			if r.Status() == Done {
 				return "已全部上线"
+			}
+			if r.Status() == Superseded {
+				return "已包含在 " + r.SupersededBy
 			}
 			c := r.Current()
 			if c == nil {
@@ -183,6 +192,7 @@ type pageData struct {
 	Flash    string
 	Error    string
 	Rows     []row    // list page: runs of every shown pipeline, newest first
+	Summary  []count  // list page: how many of the rows are in each status (only statuses with rows)
 	EnvNames []string // list page: the environment columns (every pipeline's, in order)
 	// run page
 	State *PipelineState
@@ -193,6 +203,26 @@ type pageData struct {
 type row struct {
 	S *PipelineState
 	R *Run
+}
+
+type count struct {
+	Status string
+	N      int
+}
+
+// summarize: runs per status, in summaryOrder (the statuses that have runs).
+func summarize(runs []*Run) []count {
+	n := map[string]int{}
+	for _, r := range runs {
+		n[r.Status()]++
+	}
+	var out []count
+	for _, st := range summaryOrder {
+		if n[st] > 0 {
+			out = append(out, count{st, n[st]})
+		}
+	}
+	return out
 }
 
 type tryItem struct {
@@ -232,6 +262,11 @@ func (b *Board) Handler() http.Handler {
 			}
 		}
 		d.EnvNames = envNames(d.States)
+		var runs []*Run
+		for _, r := range d.Rows {
+			runs = append(runs, r.R)
+		}
+		d.Summary = summarize(runs)
 		sort.SliceStable(d.Rows, func(i, j int) bool { return d.Rows[i].R.Created.After(d.Rows[j].R.Created) })
 		render(w, "list.html", d)
 	})
@@ -362,6 +397,7 @@ func (b *Board) tryItems(ps *PipelineState, run *Run) []tryItem {
 
 type apiRun struct {
 	ID, Name, Title, Trigger, TriggerURL, Status string
+	SupersededBy                                 string `json:",omitempty"`
 	Items                                        []string
 	Created                                      time.Time
 	Steps                                        []Step
@@ -369,27 +405,49 @@ type apiRun struct {
 
 func (b *Board) apiState() any {
 	var out []map[string]any
+	var all []*Run
 	for _, s := range b.All() {
 		var runs []apiRun
 		for _, r := range s.Runs {
 			runs = append(runs, apiRun{ID: r.ID, Name: r.Name, Title: r.Title, Trigger: r.Trigger, TriggerURL: r.TriggerURL,
-				Status: r.Status(), Items: r.Items, Created: r.Created, Steps: r.Steps})
+				Status: r.Status(), SupersededBy: r.SupersededBy, Items: r.Items, Created: r.Created, Steps: r.Steps})
 		}
+		all = append(all, s.Runs...)
 		out = append(out, map[string]any{"pipeline": s.P.ID, "title": s.P.Title, "updated": s.Updated, "error": s.Error,
 			"environments": s.Envs, "gates": s.Gates, "delivery": s.Delivery, "runs": runs})
 	}
-	return map[string]any{"pipelines": out}
+	summary := map[string]int{}
+	for _, c := range summarize(all) {
+		summary[c.Status] = c.N
+	}
+	return map[string]any{"pipelines": out, "summary": summary}
 }
 
-var statusValue = map[string]int{Done: 2, Skip: 2, Running: 1, Waiting: 0, Failed: -1, Person: -2}
+var statusValue = map[string]int{Done: 2, Skip: 2, Running: 1, Waiting: 0, Failed: -1, Person: -2, Unknown: -3, Superseded: 3}
 var labelEsc = regexp.MustCompile(`["\\\n]`)
 
 func (b *Board) metrics() string {
 	var w strings.Builder
-	w.WriteString("# HELP delivery_run_status 2 done, 1 running, 0 waiting, -1 failed, -2 waiting for a person\n# TYPE delivery_run_status gauge\n")
+	w.WriteString("# HELP delivery_run_status 2 done, 1 running, 0 waiting, -1 failed, -2 waiting for a person, -3 unknown (environment not observable), 3 superseded by a newer run\n# TYPE delivery_run_status gauge\n")
 	for _, s := range b.All() {
 		for _, r := range s.Runs {
 			fmt.Fprintf(&w, "delivery_run_status{pipeline=%q,run=%q,name=%q} %d\n", s.P.ID, r.ID, labelEsc.ReplaceAllString(trunc(r.Name, 80), ""), statusValue[r.Status()])
+		}
+	}
+	w.WriteString("# HELP delivery_runs runs shown per status (a superseded run counts only as superseded; unknown: delivered by git to an environment the board cannot observe)\n# TYPE delivery_runs gauge\n")
+	for _, s := range b.All() {
+		n := map[string]int{}
+		for _, r := range s.Runs {
+			n[r.Status()]++
+		}
+		for _, st := range append([]string{Done}, summaryOrder...) {
+			fmt.Fprintf(&w, "delivery_runs{pipeline=%q,status=%q} %d\n", s.P.ID, st, n[st])
+		}
+	}
+	w.WriteString("# HELP delivery_env_observed 1 when a status source of the environment answers, 0 when its state is unknown\n# TYPE delivery_env_observed gauge\n")
+	for _, s := range b.All() {
+		for _, e := range s.Envs {
+			fmt.Fprintf(&w, "delivery_env_observed{pipeline=%q,env=%q} %d\n", s.P.ID, e.Name, map[bool]int{true: 1}[e.Observed])
 		}
 	}
 	w.WriteString("# HELP delivery_promotion_ready 1 when the gate of a promotion passes\n# TYPE delivery_promotion_ready gauge\n")
@@ -489,6 +547,7 @@ type unhealthy struct{ Pipeline, Env, Detail string }
 type health struct {
 	OK, Total int
 	Bad       []unhealthy
+	Unknown   []unhealthy // not observable: neither healthy nor unhealthy, not in Total
 }
 
 // Health: the header's summary (only the unhealthy environments are named, however many pipelines there are).
@@ -496,6 +555,10 @@ func (b *Board) Health() health {
 	var h health
 	for _, s := range b.All() {
 		for _, e := range s.Envs {
+			if !e.Observed {
+				h.Unknown = append(h.Unknown, unhealthy{s.P.ID, e.Name, e.Error})
+				continue
+			}
 			h.Total++
 			if e.Healthy() {
 				h.OK++
