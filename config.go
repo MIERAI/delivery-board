@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -109,6 +111,10 @@ type Environment struct {
 		Container string `yaml:"container"`
 	} `yaml:"workload"`
 	Promotion *Promotion `yaml:"promotion"`
+	// Unobserved: the environment runs on a cluster the board cannot read (e.g. a lab cluster): its deployments show
+	// as unknown (无法观测) once git has the version, never as running. The board also treats an environment as
+	// unobserved while neither its workload nor its Argo CD Application can be read.
+	Unobserved bool `yaml:"unobserved"`
 }
 
 // Promotion into this environment: a person starts it (workflow_dispatch → PR → merge), behind a gate.
@@ -277,7 +283,7 @@ func (p *Pipeline) validate() error {
 		if e.Name == "" || e.Manifests.Repo == "" || e.Manifests.Path == "" || e.Manifests.Image == "" {
 			return fmt.Errorf("environments[%d]: name and manifests.{repo,path,image} required", i)
 		}
-		e.Stage = or(e.Stage, strings.ToUpper(e.Name[:1])+e.Name[1:])
+		e.Stage = or(e.Stage, capitalize(e.Name))
 		if e.Manifests.Format == "" {
 			e.Manifests.Format = "helm"
 			if base := path.Base(e.Manifests.Path); base == "kustomization.yaml" || base == "kustomization.yml" || base == "Kustomization" {
@@ -343,6 +349,12 @@ func or(v ...string) string {
 		}
 	}
 	return ""
+}
+
+// capitalize: the first character in upper case (a rune: an environment may be named 本番).
+func capitalize(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // sha7 fills the followPR placeholder ($(sha7); {sha7} is accepted too).

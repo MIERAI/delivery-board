@@ -20,12 +20,19 @@ const (
 	Failed  = "failed"
 	Waiting = "waiting"
 	Skip    = "skip"
+	// Unknown: git has delivered the version, but the board cannot see the environment's cluster (no status source
+	// answers, or the environment is declared unobserved): whether it runs there is not known. Not "running".
+	Unknown = "unknown"
+	// Superseded: a newer run of the pipeline, which includes this one's commit, has reached or waits at the same
+	// delivery step; delivering the newer one delivers this one too. Nothing to do for this run from that step on.
+	Superseded = "superseded"
 )
 
 type Step struct {
 	Stage, Name, Status string
 	Start, End          time.Time
 	URL, Note           string
+	Env                 string `json:",omitempty"` // a delivery step (promote into / deploy to this environment)
 }
 
 type Run struct {
@@ -35,6 +42,8 @@ type Run struct {
 	Items               []string
 	Created             time.Time
 	Steps               []Step
+	SHA                 string `json:"-"` // the commit of the branch it delivers ("" = not yet)
+	SupersededBy        string // short sha of the newer run that includes it ("" = not superseded)
 }
 
 func (r *Run) Status() string { return overall(r.Steps) }
@@ -61,10 +70,10 @@ func (r *Run) Span() (start, end time.Time) {
 			break
 		}
 	}
-	if st := r.Status(); st == Done || st == Failed {
+	if st := r.Status(); st == Done || st == Failed || st == Unknown || st == Superseded { // nothing more will happen
 		for _, s := range r.Steps {
-			if s.End.After(end) {
-				end = s.End
+			if t := first(s.End, s.Start); t.After(end) {
+				end = t
 			}
 		}
 	}
@@ -76,13 +85,10 @@ func overall(steps []Step) string {
 	for _, s := range steps {
 		has[s.Status] = true
 	}
-	for _, k := range []string{Failed, Running, Person} {
+	for _, k := range []string{Failed, Running, Person, Unknown, Superseded, Waiting} {
 		if has[k] {
 			return k
 		}
-	}
-	if has[Waiting] {
-		return Waiting
 	}
 	return Done
 }
@@ -355,7 +361,11 @@ func (c *collector) gate(e *Environment) (*Gate, error) {
 	g.Checks = append(g.Checks, Check{Name: "有新版本", OK: newer, Detail: map[bool]string{
 		true: fmt.Sprintf("%s → %s", or(g.Current, "?"), g.Candidate), false: "已是 " + pr.From + " 的版本"}[newer]})
 	healthy := from.Healthy() && from.Tag == g.Candidate
-	g.Checks = append(g.Checks, Check{Name: pr.From + " 健康", OK: healthy, Detail: fmt.Sprintf("%s/%s · 运行 %s", from.Sync, from.Health, or(from.Tag, "?"))})
+	detail := fmt.Sprintf("%s/%s · 运行 %s", from.Sync, from.Health, or(from.Tag, "?"))
+	if !from.Observed {
+		detail = "无法观测"
+	}
+	g.Checks = append(g.Checks, Check{Name: pr.From + " 健康", OK: healthy, Detail: detail})
 	soaked := !g.Since.IsZero() && c.now().Sub(g.Since) >= pr.Soak.Duration
 	g.Checks = append(g.Checks, Check{Name: "在 " + pr.From + " 运行 ≥ " + human(pr.Soak.Duration), OK: soaked,
 		Detail: "已运行 " + human(c.now().Sub(g.Since))})
@@ -430,7 +440,7 @@ func (c *collector) runs2(ps *PipelineState) []*Run {
 			}
 		}
 		out = append(out, &Run{ID: fmt.Sprintf("pr-%d", pr.Number), Pipeline: p.ID, Name: name, Title: pr.Title,
-			Trigger: fmt.Sprintf("#%d", pr.Number), TriggerURL: pr.HTMLURL, Items: items, Created: pr.CreatedAt, Steps: steps})
+			Trigger: fmt.Sprintf("#%d", pr.Number), TriggerURL: pr.HTMLURL, Items: items, Created: pr.CreatedAt, Steps: steps, SHA: sha})
 	}
 	if p.Push != nil {
 		for i := range c.runs {
@@ -442,14 +452,67 @@ func (c *collector) runs2(ps *PipelineState) []*Run {
 			used[r.HeadSHA] = true
 			out = append(out, &Run{ID: "c-" + short(r.HeadSHA), Pipeline: p.ID, Name: or(p.Push.Label, "push") + ": " + trunc(r.DisplayTitle, 70),
 				Title: r.DisplayTitle, Trigger: short(r.HeadSHA), TriggerURL: fmt.Sprintf("https://github.com/%s/commit/%s", p.Repo, r.HeadSHA),
-				Created: r.CreatedAt, Steps: c.delivery(r.HeadSHA, ps)})
+				Created: r.CreatedAt, Steps: c.delivery(r.HeadSHA, ps), SHA: r.HeadSHA})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
 	if len(out) > c.max {
 		out = out[:c.max]
 	}
+	c.supersede(out)
 	return out
+}
+
+// supersede marks the delivery steps a newer run makes moot. A run waiting at a delivery step (promote into an
+// environment, or the deployment there) is superseded from that step on when a newer run of the pipeline — a later
+// commit of the branch, so it includes this one — has reached or waits at the same step: promoting the newer one
+// delivers this one too, and only the newest keeps the action. Finished steps stay as they are.
+func (c *collector) supersede(runs []*Run) {
+	for _, r := range runs {
+		if r.SHA == "" {
+			continue
+		}
+		for i := range r.Steps {
+			s := &r.Steps[i]
+			if s.Env == "" || !pendingStep(s.Status) {
+				continue
+			}
+			n := c.newestAt(runs, r, s)
+			if n == nil {
+				continue
+			}
+			r.SupersededBy = short(n.SHA)
+			for j := i; j < len(r.Steps); j++ {
+				if t := &r.Steps[j]; pendingStep(t.Status) {
+					t.Status, t.URL, t.Note = Superseded, "", "已包含在 "+short(n.SHA)
+				}
+			}
+			break
+		}
+	}
+}
+
+// pendingStep: a step that is not finished (and has not failed).
+func pendingStep(st string) bool {
+	return st == Person || st == Waiting || st == Running || st == Unknown
+}
+
+// newestAt: the newest run (by position on the branch) that includes r's commit and has reached or waits at step s.
+func (c *collector) newestAt(runs []*Run, r *Run, s *Step) *Run {
+	var best *Run
+	for _, n := range runs {
+		if n == r || n.SHA == "" || short(n.SHA) == short(r.SHA) || !c.contains(r.SHA, n.SHA) {
+			continue
+		}
+		for _, t := range n.Steps {
+			if t.Env == s.Env && t.Name == s.Name && (t.Status == Done || t.Status == Superseded || pendingStep(t.Status) && t.Status != Waiting) {
+				if best == nil || c.pos[short(n.SHA)] < c.pos[short(best.SHA)] {
+					best = n
+				}
+			}
+		}
+	}
+	return best
 }
 
 func (c *collector) changeOf(pr *ghPull) *Change {
@@ -597,7 +660,7 @@ func (c *collector) delivery(sha string, ps *PipelineState) []Step {
 			prev = steps[len(steps)-1].Status
 		}
 		if e.Promotion != nil {
-			s := Step{Stage: "Promote", Name: "promote → " + e.Name}
+			s := Step{Stage: "Promote", Name: "promote → " + e.Name, Env: e.Name}
 			g := ps.Gate(e.Name)
 			switch {
 			case arrived != nil:
@@ -617,11 +680,13 @@ func (c *collector) delivery(sha string, ps *PipelineState) []Step {
 			steps = append(steps, or2(s))
 		}
 		st := c.envs[e.Name]
-		s := Step{Stage: e.Stage, Name: e.Name + " 上线"}
+		s := Step{Stage: e.Stage, Name: e.Name + " 上线", Env: e.Name}
 		switch {
 		case arrived == nil:
 		case !c.contains(sha, c.desired(e.Name)): // arrived, then git went back to an older version
 			s.Status, s.Start, s.End, s.URL, s.Note = Done, arrived.At, arrived.At, arrived.URL, "之后回滚到 "+c.desired(e.Name)
+		case !st.Observed: // git has it; whether the cluster runs it cannot be seen from here
+			s.Status, s.Start, s.URL, s.Note = Unknown, arrived.At, arrived.URL, "无法观测 · git 已是 "+c.desired(e.Name)
 		case c.contains(sha, st.Tag) && !st.Healthy() && c.desired(e.Name) == st.Tag:
 			s.Status, s.Start, s.Note = Running, arrived.At, st.Sync+"/"+st.Health
 		case !c.contains(sha, st.Tag):

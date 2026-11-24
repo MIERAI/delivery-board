@@ -14,7 +14,8 @@
   <a class="mp" href="/?p={{.P.ID}}">{{.P.Title}}</a>
   {{range $.EnvNames}}{{$e := $s.Env .}}{{$g := $s.Gate .}}
   <a class="mc" href="/?p={{$s.P.ID}}">{{if $e}}
-    <div><span class="dot{{if not $e.Healthy}} bad{{end}}" title="{{$e.Sync}}/{{$e.Health}}{{if $e.Error}} · {{$e.Error}}{{end}}"></span><b class="mono">{{or $e.Tag "?"}}</b></div>
+    {{if $e.Observed}}<div><span class="dot{{if not $e.Healthy}} bad{{end}}" title="{{$e.Sync}}/{{$e.Health}}{{if $e.Error}} · {{$e.Error}}{{end}}"></span><b class="mono">{{or $e.Tag "?"}}</b></div>
+    {{else}}<div title="{{$e.Error}}"><span class="dot unk"></span><span class="mut">无法观测</span></div>{{end}}
     {{if $g}}<div class="gs {{if $g.OpenPR}}wait{{else if $g.Ready}}ok{{else if $g.UpToDate}}same{{else}}ng{{end}}">
       {{if $g.OpenPR}}#{{$g.OpenPR.Number}} 等合并{{if $g.OpenPRPolicy}} · 预算不符{{end}}{{else if $g.UpToDate}}已同步{{else if $g.Ready}}落后 {{$g.Behind}} · 可以 promote{{else if $g.Overridable}}落后 {{$g.Behind}} · {{$g.Need}}{{else}}等门槛: {{$g.Failing}}{{end}}</div>
     {{with $g.Budget}}<div class="gb {{.Verdict}}" title="{{.Detail}}">预算 {{if .Remaining}}{{pct .Remaining}}{{else}}?{{end}} · {{verdictWord .Verdict}}</div>{{end}}{{end}}
@@ -52,10 +53,11 @@
 
 {{end}}
 <div class="card list">
-  <h2>交付历史<span class="mut sm">从改动(设计书 PR / 推送)到最后一个环境 · 更新 {{range .States}}{{hms .Updated}} {{end}}</span></h2>
+  <h2>交付历史<span class="mut sm">从改动(设计书 PR / 推送)到最后一个环境 · 更新 {{range .States}}{{hms .Updated}} {{end}}</span>
+    {{with .Summary}}<span class="sum">{{range .}}<span class="pill pill-{{.Status}}">{{word .Status}} {{.N}}</span>{{end}}</span>{{end}}</h2>
   <div class="row head"><span></span><span>交付</span><span>触发</span><span>开始</span><span>耗时</span><span>当前</span><span>进度</span></div>
   {{range .Rows}}{{$s := .S}}{{with .R}}{{$st := .Status}}
-  <a class="row" href="/run/{{$s.P.ID}}/{{.ID}}">{{icon $st 22}}
+  <a class="row{{if eq $st "superseded"}} superseded{{end}}" href="/run/{{$s.P.ID}}/{{.ID}}">{{icon $st 22}}
     <span><div class="name"><span class="pl">{{$s.P.Title}}</span>{{.Name}}</div><div class="sub">{{.Title}}</div></span>
     <span class="mono">{{.Trigger}}</span>
     {{$sp := spanOf .}}<span class="mut">{{ago (index $sp 0)}}</span>

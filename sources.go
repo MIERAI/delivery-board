@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // ── GitHub ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -221,6 +223,9 @@ type EnvState struct {
 	Sync, Health     string // Argo CD
 	Ready            bool   // every replica updated and ready
 	Error            string
+	// Observed: a status source of the environment answered. False when it is declared unobserved (its cluster is not
+	// the board's) or when neither its workload nor its Argo CD Application could be read: its state is unknown.
+	Observed bool
 }
 
 func (s *EnvState) Healthy() bool {
@@ -229,12 +234,17 @@ func (s *EnvState) Healthy() bool {
 
 func readEnv(k Kube, e *Environment) *EnvState {
 	out := &EnvState{Name: e.Name, Stage: e.Stage, URL: e.URL, Sync: "?", Health: "?"}
+	if e.Unobserved {
+		out.Error = "无法观测(另一个集群)"
+		return out
+	}
 	w := e.Workload
 	if w.Name != "" {
 		var d workload
 		if err := k.Get(fmt.Sprintf(workloadAPI[w.Kind], w.Namespace, w.Name), &d); err != nil {
 			out.Error = trunc(err.Error(), 100)
 		} else {
+			out.Observed = true
 			for i, c := range d.Spec.Template.Spec.Containers {
 				if c.Name == w.Container || (w.Container == "" && i == 0) {
 					out.Tag = imageTag(c.Image)
@@ -256,6 +266,7 @@ func readEnv(k Kube, e *Environment) *EnvState {
 		if err := k.Get(fmt.Sprintf("/apis/argoproj.io/v1alpha1/namespaces/%s/applications/%s", e.ArgoCD.Namespace, e.ArgoCD.App), &a); err != nil {
 			out.Error = trunc(err.Error(), 100)
 		} else {
+			out.Observed = true
 			out.Sync, out.Health = or(a.Status.Sync.Status, "?"), or(a.Status.Health.Status, "?")
 		}
 	}
@@ -270,9 +281,31 @@ func imageTag(image string) string {
 	return ""
 }
 
+// trunc shortens s to at most n characters (runes, never bytes: a cut inside a multi-byte character renders as "�")
+// and marks the cut with "…" (dropping spaces and dashes before it). It cuts at a word boundary when one lies in the last third (a CJK text has none: it is
+// cut at n), and never between a character and what joins it (a combining mark, a variation selector, a ZWJ emoji).
 func trunc(s string, n int) string {
-	if len(s) > n {
-		return s[:n] + "…"
+	if utf8.RuneCountInString(s) <= n {
+		return s
 	}
-	return s
+	r := []rune(s)
+	cut := n
+	for i := n; i > n-n/3 && i > 0; i-- {
+		if unicode.IsSpace(r[i]) {
+			cut = i
+			break
+		}
+	}
+	for cut > 0 && (joins(r[cut]) || r[cut-1] == zwj) {
+		cut--
+	}
+	return strings.TrimRightFunc(string(r[:cut]), func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Pd, r) }) + "…"
+}
+
+const zwj = '\u200d'
+
+// joins: r belongs to the character before it.
+func joins(r rune) bool {
+	return r == zwj || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Variation_Selector, r) ||
+		(r >= 0x1F3FB && r <= 0x1F3FF) // skin tone modifiers
 }

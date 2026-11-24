@@ -5,6 +5,7 @@
 <a class="brand" href="/"><span class="logo">{{icon "done" 18}}</span>{{.Board.Title}}</a>
 <div class="envs">{{$h := .Board.Health}}{{if $h.Bad}}{{range $h.Bad}}<a class="env" href="/?p={{.Pipeline}}" title="{{.Detail}}"><span class="dot bad"></span>{{.Pipeline}} · {{.Env}}</a>{{end}}
 {{else}}<span class="env"><span class="dot"></span>环境 {{$h.OK}}/{{$h.Total}} 健康</span>{{end}}
+{{with $h.Unknown}}<span class="env" title="{{range .}}{{.Pipeline}} · {{.Env}} {{end}}"><span class="dot unk"></span>{{len .}} 个无法观测</span>{{end}}
 </div></div></div></div><div class="wrap">{{end}}
 
 {{define "bottom"}}</div>
