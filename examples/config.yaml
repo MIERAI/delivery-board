@@ -32,9 +32,9 @@ pipelines:
         argocd: { app: api-factory-$(env) }
         workload: { namespace: api-factory-$(env), kind: Deployment, name: api-factory, container: api }
     environments:
-      - { name: dev, url: "http://100.90.245.89:30080" }
+      - { name: dev, url: "http://dev.example.internal:30080" }
       - name: prod
-        url: http://100.90.245.89:30081
+        url: http://prod.example.internal:30081
         promotion:
           from: dev
           soak: 10m
@@ -45,7 +45,7 @@ pipelines:
       env: dev
       internalURL: http://api-factory.api-factory-dev.svc:8080
       tokenEnv: DEV_TOKEN
-      curlToken: $(cat ~/workspace/gitops/infrastructure-live/.secrets/laptop/api-factory-dev.token)
+      curlToken: $(cat /path/to/token)
 
 # Applications registered by an app.yaml in the manifests repository (e.g. storefront: web, api, worker): one pipeline
 # per service, nothing to configure here. Refreshed every 2 minutes.

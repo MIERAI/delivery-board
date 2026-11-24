@@ -28,12 +28,12 @@ pipelines:
       jobs: { "verify / verify": verify, "image-api / build": API 镜像, "image-schema / build": 迁移镜像, "promote / promote": 推送 dev }
     environments:
       - name: dev
-        url: http://100.90.245.89:30080
+        url: http://dev.example.internal:30080
         manifests: { repo: MIERAI/gitops-manifests, path: api-factory/overlays/dev/kustomization.yaml, image: ghcr.io/mierai/api-factory }
         argocd: { app: api-factory-dev }
         workload: { namespace: api-factory-dev, kind: Deployment, name: api-factory, container: api }
       - name: prod
-        url: http://100.90.245.89:30081
+        url: http://prod.example.internal:30081
         manifests: { repo: MIERAI/gitops-manifests, path: api-factory/overlays/prod/kustomization.yaml, image: ghcr.io/mierai/api-factory }
         argocd: { app: api-factory-prod }
         workload: { namespace: api-factory-prod, kind: Deployment, name: api-factory, container: api }
@@ -47,7 +47,7 @@ pipelines:
       env: dev
       internalURL: http://api-factory.api-factory-dev.svc:8080
       tokenEnv: DEV_TOKEN
-      curlToken: $(cat ~/workspace/gitops/infrastructure-live/.secrets/laptop/api-factory-dev.token)
+      curlToken: $(cat /path/to/token)
 
 discover:
   - repo: MIERAI/gitops-manifests

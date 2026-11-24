@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -88,5 +90,21 @@ func TestTemplateErrors(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
 		})
+	}
+}
+
+// The shipped example and test data carry no deployment specifics (private or tailnet addresses, home-directory paths).
+func TestExamplesAreNeutral(t *testing.T) {
+	specific := regexp.MustCompile(`\b(10|100|172|192)\.\d+\.\d+\.\d+\b|~/|/home/|/Users/|\.secrets/`)
+	for _, f := range []string{"examples/config.yaml", "testdata/handwritten.yaml", "testdata/storefront-app.yaml"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			if m := specific.FindString(line); m != "" {
+				t.Errorf("%s:%d: environment-specific %q", f, i+1, m)
+			}
+		}
 	}
 }
