@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,73 +9,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
 // ── GitHub ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-// GitHub reads the REST API. Objects that cannot change any more (a finished run's jobs, a file at a commit) are
-// cached for the life of the process.
-type GitHub interface {
-	Get(path string, final bool, v any) error
-}
-
-type gitHub struct {
-	api, token string
-	client     *http.Client
-	mu         sync.Mutex
-	cache      map[string][]byte
-}
-
-func newGitHub(token string) *gitHub {
-	return &gitHub{api: "https://api.github.com/", token: token, client: &http.Client{Timeout: 20 * time.Second},
-		cache: map[string][]byte{}}
-}
-
-func (g *gitHub) Get(path string, final bool, v any) error {
-	g.mu.Lock()
-	b, ok := g.cache[path]
-	g.mu.Unlock()
-	if !ok {
-		var err error
-		if b, err = g.do("GET", path, g.token, nil); err != nil {
-			return err
-		}
-		if final {
-			g.mu.Lock()
-			g.cache[path] = b
-			g.mu.Unlock()
-		}
-	}
-	return json.Unmarshal(b, v)
-}
-
-func (g *gitHub) do(method, path, token string, body any) ([]byte, error) {
-	var rd io.Reader
-	if body != nil {
-		j, _ := json.Marshal(body)
-		rd = bytes.NewReader(j)
-	}
-	req, _ := http.NewRequest(method, g.api+path, rd)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "delivery-board")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GitHub %s %s: %s %s", method, strings.SplitN(path, "?", 2)[0], resp.Status, trunc(string(b), 160))
-	}
-	return b, nil
-}
 
 type ghCommit struct {
 	SHA     string `json:"sha"`

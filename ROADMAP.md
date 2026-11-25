@@ -13,8 +13,9 @@ Assessment: platform component ~80, internal multi-team ~65, open source ~50. Th
 1. **Version model: tag ≠ commit.** "Commit X is in environment E" assumes the image tag is a commit of the branch
    (`contains`, `behind`, push runs). Semver tags (`v1.2.3`) do not work. Read the commit from the image instead
    (OCI annotation `org.opencontainers.image.revision`, set by build-image), keep tag-as-commit as the fast path.
-2. **GitHub API budget.** Each pipeline costs several REST calls every 30 s; ~10–20 pipelines exhaust 5000/h.
-   Conditional requests (ETag / If-None-Match: a 304 is free), then webhooks to refresh on change; fewer runs per page.
+2. **GitHub API budget.** Done: conditional requests (a 304 is free), one request per path and refresh, a reserve and
+   back-off on the rate limit (README "API budget": 12 pipelines at 30 s went from ~8,800 to ~0–360 counted requests an
+   hour). Left: webhooks to refresh on change instead of polling (fewer requests sent, fresher pages).
 3. **Authentication.** No login; the Promote button relies on a private network. oauth2-proxy in front (GitHub org /
    team), then pass the user to the dispatch (audit: who promoted).
 

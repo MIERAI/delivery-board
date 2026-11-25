@@ -43,9 +43,12 @@ type Board struct {
 }
 
 func NewBoard(cfg *Config) *Board {
-	return &Board{cfg: cfg, gh: newGitHub(os.Getenv("GITHUB_TOKEN")), kube: newKube(),
+	b := &Board{cfg: cfg, gh: newGitHub(os.Getenv("GITHUB_TOKEN")), kube: newKube(),
 		promoteToken: os.Getenv("PROMOTE_TOKEN"), now: time.Now,
 		states: map[string]*PipelineState{}, promoted: map[string]time.Time{}, live: map[string]liveResult{}}
+	b.gh.now = func() time.Time { return b.now() }
+	b.gh.reserve = cfg.GitHub.reserve()
+	return b
 }
 
 func (b *Board) Loop() {
@@ -55,8 +58,14 @@ func (b *Board) Loop() {
 	}
 }
 
+// refresh collects every pipeline, unless the GitHub API budget says to wait (github.go). Within one refresh each
+// GitHub path is read once, whatever number of pipelines read it.
 func (b *Board) refresh() {
-	b.rediscover()
+	if !b.gh.proceed() {
+		return
+	}
+	gh := b.gh.cycle()
+	b.rediscover(gh)
 	b.refreshBudgets()
 	pipes := b.Pipelines()
 	b.mu.Lock() // forget pipelines that are gone (an app.yaml removed)
@@ -71,18 +80,20 @@ func (b *Board) refresh() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			b.refreshOne(p)
+			b.refreshOne(gh, p)
 		}()
 	}
 	wg.Wait()
 }
 
-func (b *Board) refreshOne(p *Pipeline) *PipelineState {
-	ps, err := collectPipeline(b.gh, b.kube, p, b.cfg.MaxRuns, b.now, b.budget)
+func (b *Board) refreshOne(gh GitHub, p *Pipeline) *PipelineState {
+	ps, err := collectPipeline(gh, b.kube, p, b.cfg.MaxRuns, b.now, b.budget)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err != nil {
-		slog.Error("collect", "pipeline", p.ID, "err", err)
+		if !isRateLimit(err) { // logged once by the client
+			slog.Error("collect", "pipeline", p.ID, "err", err)
+		}
 		prev := b.states[p.ID]
 		if prev == nil {
 			prev = &PipelineState{P: p}
@@ -144,7 +155,7 @@ func (b *Board) Promote(pipeline, env, change, reason string) (string, error) {
 	}
 	b.mu.Unlock()
 	b.refreshBudgets()
-	ps := b.refreshOne(p)
+	ps := b.refreshOne(b.gh, p) // fresh: not the data of the last refresh (conditional requests still make it cheap)
 	if ps == nil {
 		return "", fmt.Errorf("刷新失败,没有发起")
 	}
@@ -260,6 +271,18 @@ func (b *Board) DiscoverError() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.discoverErr
+}
+
+// GitHubNote: why refreshes wait for the GitHub API budget, and until when ("" = they do not).
+func (b *Board) GitHubNote() string {
+	if b.gh == nil {
+		return ""
+	}
+	until, why := b.gh.hold()
+	if why == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s: 刷新暂停到 %s (显示的是暂停前的数据)", why, until.In(b.cfg.loc).Format("15:04"))
 }
 func (b *Board) CSSVersion() string { return b.cssVersion }
 func (b *Board) CanPromote() bool   { return b.promoteToken != "" }

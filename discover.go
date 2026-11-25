@@ -170,7 +170,7 @@ func (b *Board) Pipelines() []*Pipeline {
 
 const discoverEvery = 2 * time.Minute
 
-func (b *Board) rediscover() {
+func (b *Board) rediscover(gh GitHub) {
 	if len(b.cfg.Discover) == 0 {
 		return
 	}
@@ -190,7 +190,7 @@ func (b *Board) rediscover() {
 	prev := b.discovered
 	b.mu.RUnlock()
 	for _, d := range b.cfg.Discover {
-		ps, errs, ok := discover(b.gh, d)
+		ps, errs, ok := discover(gh, d)
 		for _, e := range errs {
 			msgs = append(msgs, e.Error())
 		}

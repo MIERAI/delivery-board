@@ -24,8 +24,23 @@ type Config struct {
 	Discover  []*Discover `yaml:"discover"` // pipelines from app.yaml descriptors in manifests repositories
 	// ErrorBudget: gate promotions into these environments on the app's SLO error budget (budget.go); nil = off
 	ErrorBudget *ErrorBudget `yaml:"errorBudget"`
+	GitHub      GitHubConfig `yaml:"github"`
 
 	loc *time.Location
+}
+
+// GitHubConfig: how much of the GitHub rate limit the board may use (github.go).
+type GitHubConfig struct {
+	// Reserve: the share of the rate limit kept for the other clients of the token's account (default 0.2). When
+	// fewer requests than that remain, refreshes pause until the limit resets; a promotion still runs.
+	Reserve *float64 `yaml:"reserve"`
+}
+
+func (g GitHubConfig) reserve() float64 {
+	if g.Reserve == nil {
+		return defaultReserve
+	}
+	return *g.Reserve
 }
 
 // Pipeline: one application, from its changes (pull requests, pushes) to the last environment.
@@ -198,6 +213,9 @@ func (c *Config) validate() error {
 		if err := c.ErrorBudget.validate(); err != nil {
 			return fmt.Errorf("config: %w", err)
 		}
+	}
+	if r := c.GitHub.reserve(); r < 0 || r >= 1 {
+		return fmt.Errorf("config: github.reserve must be at least 0 and below 1 (a share of the rate limit), not %g", r)
 	}
 	for i, d := range c.Discover {
 		if strings.Count(d.Repo, "/") != 1 {
