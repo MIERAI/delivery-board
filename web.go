@@ -483,6 +483,9 @@ func (b *Board) metrics() string {
 		fmt.Fprintf(&w, "delivery_board_last_update_age_seconds{pipeline=%q} %.0f\n", s.P.ID, age)
 	}
 	b.doraMetrics(&w)
+	if b.gh != nil {
+		b.gh.writeMetrics(&w)
+	}
 	return w.String()
 }
 

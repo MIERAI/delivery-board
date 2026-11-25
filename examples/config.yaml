@@ -7,6 +7,7 @@ title: 交付看板
 timezone: Asia/Tokyo
 interval: 30s
 maxRuns: 12
+github: { reserve: 0.2 }   # keep 20% of the GitHub rate limit for the account's other clients (README: API budget)
 
 pipelines:
   - id: api-factory

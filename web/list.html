@@ -1,6 +1,7 @@
 {{template "top" .}}
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+{{with .Board.GitHubNote}}<div class="err">GitHub API: {{.}}</div>{{end}}
 {{with .Board.DiscoverError}}<div class="err">app.yaml: {{.}}</div>{{end}}
 {{$b := .Board}}{{$f := .Filter}}
 <nav class="tabs"><a href="/" class="{{if not $f}}on{{end}}">全部</a>{{range $b.Pipelines}}<a href="/?p={{.ID}}" class="{{if eq $f .ID}}on{{end}}">{{.Title}}</a>{{end}}</nav>

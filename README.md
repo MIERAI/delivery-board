@@ -24,7 +24,8 @@ design PR ─ AI review ─ merge ─ generate ─ generated PR ─ release ─ 
 
 Pages: `/` (gates + history of every pipeline), `/run/<pipeline>/<id>` (the run as a flow graph), `/api/state` (JSON),
 `/api/gate/<pipeline>/<env>?change=&reason=` (dry run of a promotion),
-`/metrics` (Prometheus: run status, promotion ready, commits behind, DORA metrics: [docs/dora.md](docs/dora.md)),
+`/metrics` (Prometheus: run status, promotion ready, commits behind, DORA metrics: [docs/dora.md](docs/dora.md), GitHub
+API use: [API budget](#api-budget)),
 `/healthz`.
 
 Run states: 成功 done, 进行中 running, 等人处理 waiting for a person (review answer, merge, promote), 失败 failed,
@@ -112,6 +113,44 @@ K8S_API=http://127.0.0.1:8001 GITHUB_TOKEN=… go run . -config examples/config.
 
 The board has no login: run it on a private network. Promoting only opens a PR; merging stays on GitHub.
 
+### API budget
+
+Every refresh reads the same GitHub lists again (per pipeline: the branch's commits, workflow runs, pull requests, the
+history of each environment's manifests file, open promotion PRs), and all tokens of one user share a rate limit of
+5000 requests an hour. Without care a dozen pipelines at `interval: 30s` need more than that. The client
+([github.go](github.go)) spends as little as it can:
+
+- **Conditional requests.** The ETag / Last-Modified of each path's last answer is kept with its body (in memory, a
+  bounded LRU: 2000 paths, 64 MiB) and sent back as `If-None-Match` / `If-Modified-Since`. Unchanged data comes back as
+  `304 Not Modified`, which GitHub does not count against the rate limit. Objects that cannot change (a finished run's
+  jobs, a file at a commit) are not asked for again at all.
+- **One request per path and refresh.** Pipelines that read the same path in one refresh (the services of a monorepo
+  read one repository's commits and runs; every discovered pipeline reads the manifests repository's open PRs) share
+  one request. A promotion re-reads its pipeline outside the refresh, so it never decides on the previous refresh's data.
+- **A reserve for other clients.** The rate limit headers are read on every response. When fewer than `github.reserve`
+  (default `0.2`: 20% of the limit) remain, refreshes pause until the limit resets; the page shows the last data and
+  why it is paused, and a promotion still runs. After a 403 / 429 rate limit answer nothing is sent until the time
+  GitHub names (`Retry-After`, else `X-RateLimit-Reset`, else a minute). Both are logged once, not per request.
+
+```yaml
+github:
+  reserve: 0.2        # share of the rate limit left to the account's other clients (0: use all of it)
+```
+
+Measured on a fake GitHub with 12 pipelines (one configured, eleven discovered; `go test -run RequestsPerCycle -v`):
+
+| One refresh | Before | Now |
+|---|---|---|
+| requests sent | 73 | 40 |
+| counted against the limit, nothing changed | 73 | 0 |
+| counted, one repository active (new commit, release running) | 74 | 3 |
+| **counted per hour at `interval: 30s`** (idle / one repository always active) | ~8,800 | 0 / ~360 |
+| counted per hour at `interval: 2m` | ~2,200 | 0 / ~90 |
+
+Cold start (first refresh) is ~144 → 106 requests. Metrics: `delivery_github_requests_total{result="200|304|rate_limited|error"}`,
+`delivery_github_deduplicated_total`, `delivery_github_cycles_skipped_total`, `delivery_github_ratelimit_remaining`,
+`_limit`, `_reset_timestamp_seconds`, `delivery_github_cache_entries`, `delivery_github_cache_bytes`.
+
 ## Roadmap
 
 What is parked and in which order: [ROADMAP.md](ROADMAP.md).
@@ -119,4 +158,5 @@ What is parked and in which order: [ROADMAP.md](ROADMAP.md).
 ## Development
 
 `go test ./...` covers the run model against recorded API shapes (design change → gate, soak, health, open PR,
-review failure, rollback, syncing) and renders every page.
+review failure, rollback, syncing) and renders every page. The GitHub client is tested against a fake GitHub over HTTP
+(`fleet_test.go`: ETags, 304s, rate limit headers and answers); no test calls the real API.
